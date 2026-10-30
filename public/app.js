@@ -94,8 +94,8 @@ function setupTelegram() {
     tg.setBackgroundColor('#02060E');
     if (tg.setBottomBarColor) tg.setBottomBarColor('#02060E');
     if (tg.disableVerticalSwipes) tg.disableVerticalSwipes();
-    const mobile = ['ios', 'android'].includes(tg.platform);
-    if (mobile && tg.isVersionAtLeast && tg.isVersionAtLeast('8.0') && tg.requestFullscreen && !tg.isFullscreen) tg.requestFullscreen();
+    // Полный экран везде, где Telegram это умеет: телефоны, Telegram Desktop и macOS.
+    if (tg.isVersionAtLeast && tg.isVersionAtLeast('8.0') && tg.requestFullscreen && !tg.isFullscreen) tg.requestFullscreen();
   } catch { /* не все клиенты это умеют */ }
   syncSafeArea();
   try {
@@ -680,10 +680,15 @@ async function loadProfile() {
   const p = state.profile;
   $('friends-count').textContent = p.friendsCount ? p.friendsCount : '';
   $('profile-card').innerHTML = `<div class="glass profile-card">
-    <div class="profile-head"><span class="avatar" aria-hidden="true">${esc(initials(p.firstName))}</span>
-      <b>${esc(p.firstName || 'Игрок')}</b></div>
+    <button type="button" class="hero-dude" data-go="wardrobe" aria-label="Открыть гардероб">
+      <span class="dude-glow" aria-hidden="true"></span>
+      <svg class="dude dude-float" aria-hidden="true"><use href="#dude"/></svg>
+      <span class="dude-btn">${icon('i-shirt')}Гардероб</span>
+    </button>
+    <div class="profile-name"><b>${esc(p.firstName || 'Игрок')}</b>
+      <span class="profile-wallet"><span class="stat-chip"><span class="coin" aria-hidden="true"></span><span class="num">${p.coins || 0}</span></span>
+      <span class="stat-chip"><svg class="ic ic-aura" aria-hidden="true"><use href="#i-target"/></svg><span class="num">${p.aura}</span></span></span></div>
     <div class="strip strip-flat">
-      <span><b class="num">${p.aura}</b><span>аура</span></span>
       <span><b class="num">${p.weekAura}</b><span>за неделю</span></span>
       <span><b class="num">${p.exactHits}</b><span>точняков</span></span>
       <span><b class="num">${p.settledPredictions}</b><span>сыграно</span></span>
