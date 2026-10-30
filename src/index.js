@@ -1,11 +1,13 @@
 // Точняк: Cloudflare Worker. Раздаёт мини-апп (папка public), отвечает на API,
 // принимает сообщения бота и раз в 10 минут обновляет матчи.
 
-import { ensureSchema, nowIso } from './db.js';
+import { ensureSchema, nowIso, newFriendCode } from './db.js';
 import { validateInitData, botApi } from './telegram.js';
 import { syncAndSettle } from './footballData.js';
 
 const MAX_GOALS = 15;
+const MAX_FRIENDS = 300;
+const FRIEND_CODE = /^[a-z0-9]{8}$/;
 const MSK_OFFSET = 3 * 3600000;
 
 const json = (data, status = 200) => new Response(JSON.stringify(data), {
@@ -24,6 +26,61 @@ export function weekStartIso(now = Date.now()) {
 
 function lockMs(env) {
   return Number(env.LOCK_MINUTES || 5) * 60000;
+}
+
+function botUsername(env) {
+  return env.BOT_USERNAME || 'tochnyak_bot';
+}
+
+function inviteLink(env, code) {
+  return `https://t.me/${botUsername(env)}?start=f_${code}`;
+}
+
+const crestUrl = (file) => (file ? `/crest/${file}` : null);
+
+function matchOut(m, env, now) {
+  const lockAt = new Date(Date.parse(m.utc_date) - lockMs(env)).toISOString();
+  return {
+    id: m.id,
+    competition: m.competition,
+    competitionName: m.competition_name,
+    utcDate: m.utc_date,
+    lockAt,
+    open: now < Date.parse(lockAt) && ['SCHEDULED', 'TIMED'].includes(m.status),
+    status: m.status,
+    home: { name: m.home_name, short: m.home_short, tla: m.home_tla, crest: crestUrl(m.home_crest) },
+    away: { name: m.away_name, short: m.away_short, tla: m.away_tla, crest: crestUrl(m.away_crest) },
+    score: m.home_score == null ? null : { home: m.home_score, away: m.away_score },
+    prediction: m.pred_home == null ? null : { home: m.pred_home, away: m.pred_away, points: m.pred_points }
+  };
+}
+
+// Выдаёт игроку код приглашения, если его ещё нет.
+async function ensureFriendCode(db, userId) {
+  for (let i = 0; i < 3; i += 1) {
+    const row = await db.prepare('SELECT friend_code FROM users WHERE id = ?1').bind(userId).first();
+    if (!row || row.friend_code) return row ? row.friend_code : null;
+    try {
+      await db.prepare('UPDATE users SET friend_code = ?1 WHERE id = ?2 AND friend_code IS NULL').bind(newFriendCode(), userId).run();
+    } catch { /* совпал код, пробуем ещё раз */ }
+  }
+  return null;
+}
+
+async function addFriend(db, userId, code, now) {
+  if (!FRIEND_CODE.test(String(code || ''))) return { error: [400, 'bad_code', 'Ссылка-приглашение не подходит'] };
+  const friend = await db.prepare('SELECT id, first_name FROM users WHERE friend_code = ?1').bind(code).first();
+  if (!friend) return { error: [404, 'no_friend', 'Игрок по этой ссылке не найден'] };
+  if (friend.id === userId) return { self: true };
+  const count = await db.prepare('SELECT COUNT(*) AS n FROM friends WHERE user_id = ?1').bind(userId).first();
+  if (count.n >= MAX_FRIENDS) return { error: [409, 'too_many', 'Друзей уже слишком много'] };
+  const at = nowIso(now);
+  const res = await db.batch([
+    db.prepare('INSERT OR IGNORE INTO friends (user_id, friend_id, created_at) VALUES (?1, ?2, ?3)').bind(userId, friend.id, at),
+    db.prepare('INSERT OR IGNORE INTO friends (user_id, friend_id, created_at) VALUES (?1, ?2, ?3)').bind(friend.id, userId, at)
+  ]);
+  const added = Boolean(res[0] && res[0].meta && res[0].meta.changes);
+  return { added, name: friend.first_name || 'Игрок' };
 }
 
 async function currentTelegramUser(request, env) {
@@ -50,7 +107,9 @@ async function loadProfile(db, userId, now) {
     weekAura: week.pts,
     settledPredictions: totals.total || 0,
     exactHits: totals.exact || 0,
-    joinedAt: user.created_at
+    joinedAt: user.created_at,
+    friendCode: await ensureFriendCode(db, userId),
+    friendsCount: (await db.prepare('SELECT COUNT(*) AS n FROM friends WHERE user_id = ?1').bind(userId).first()).n
   };
 }
 
@@ -89,6 +148,7 @@ async function handleApi(request, env, url, now) {
   if (path === '/api/me' && method === 'DELETE') {
     await db.batch([
       db.prepare('DELETE FROM predictions WHERE user_id = ?1').bind(tgUser.id),
+      db.prepare('DELETE FROM friends WHERE user_id = ?1 OR friend_id = ?1').bind(tgUser.id),
       db.prepare('DELETE FROM users WHERE id = ?1').bind(tgUser.id)
     ]);
     return json({ deleted: true });
@@ -103,24 +163,59 @@ async function handleApi(request, env, url, now) {
        WHERE m.utc_date BETWEEN ?2 AND ?3 AND m.status NOT IN ('CANCELLED')
        ORDER BY m.utc_date, m.id`
     ).bind(tgUser.id, from, to).all();
-    const lock = lockMs(env);
-    const matches = results.map((m) => {
-      const lockAt = new Date(Date.parse(m.utc_date) - lock).toISOString();
-      return {
-        id: m.id,
-        competition: m.competition,
-        competitionName: m.competition_name,
-        utcDate: m.utc_date,
-        lockAt,
-        open: now < Date.parse(lockAt) && ['SCHEDULED', 'TIMED'].includes(m.status),
-        status: m.status,
-        home: { name: m.home_name, short: m.home_short, tla: m.home_tla },
-        away: { name: m.away_name, short: m.away_short, tla: m.away_tla },
-        score: m.home_score == null ? null : { home: m.home_score, away: m.away_score },
-        prediction: m.pred_home == null ? null : { home: m.pred_home, away: m.pred_away, points: m.pred_points }
-      };
+    return json({ matches: results.map((m) => matchOut(m, env, now)), now: nowIso(now) });
+  }
+
+  // Мои прогнозы: будущие и сыгранные, свежие сверху.
+  if (path === '/api/my' && method === 'GET') {
+    const { results } = await db.prepare(
+      `SELECT m.*, p.home AS pred_home, p.away AS pred_away, p.points AS pred_points
+       FROM predictions p JOIN matches m ON m.id = p.match_id
+       WHERE p.user_id = ?1 ORDER BY m.utc_date DESC, m.id DESC LIMIT 100`
+    ).bind(tgUser.id).all();
+    return json({ items: results.map((m) => matchOut(m, env, now)) });
+  }
+
+  if (path === '/api/friends' && method === 'GET') {
+    const period = url.searchParams.get('period') === 'all' ? 'all' : 'week';
+    const code = await ensureFriendCode(db, tgUser.id);
+    const circle = 'u.id = ?1 OR u.id IN (SELECT friend_id FROM friends WHERE user_id = ?1)';
+    const { results } = period === 'all'
+      ? await db.prepare(`SELECT u.id, u.first_name, u.friend_code, u.aura AS pts FROM users u
+          WHERE ${circle} ORDER BY pts DESC, u.id`).bind(tgUser.id).all()
+      : await db.prepare(`SELECT u.id, u.first_name, u.friend_code, COALESCE(SUM(p.points), 0) AS pts FROM users u
+          LEFT JOIN predictions p ON p.user_id = u.id AND p.settled_at >= ?2
+          WHERE ${circle} GROUP BY u.id ORDER BY pts DESC, u.id`).bind(tgUser.id, weekStartIso(now)).all();
+    return json({
+      period,
+      code,
+      link: code ? inviteLink(env, code) : null,
+      rows: results.map((r, i) => ({
+        rank: i + 1,
+        name: r.first_name || 'Игрок',
+        pts: r.pts,
+        isMe: r.id === tgUser.id,
+        code: r.id === tgUser.id ? null : r.friend_code
+      }))
     });
-    return json({ matches, now: nowIso(now) });
+  }
+
+  if (path === '/api/friends' && method === 'POST') {
+    const body = await request.json().catch(() => ({}));
+    const res = await addFriend(db, tgUser.id, body.code, now);
+    if (res.error) return error(...res.error);
+    return json(res);
+  }
+
+  if (path === '/api/friends' && method === 'DELETE') {
+    const code = url.searchParams.get('code') || '';
+    if (!FRIEND_CODE.test(code)) return error(400, 'bad_code', 'Не тот код');
+    const friend = await db.prepare('SELECT id FROM users WHERE friend_code = ?1').bind(code).first();
+    if (friend) {
+      await db.prepare('DELETE FROM friends WHERE (user_id = ?1 AND friend_id = ?2) OR (user_id = ?2 AND friend_id = ?1)')
+        .bind(tgUser.id, friend.id).run();
+    }
+    return json({ removed: true });
   }
 
   if (path === '/api/predictions' && method === 'POST') {
@@ -188,12 +283,17 @@ async function handleBot(request, env, url) {
   const appUrl = url.origin;
   const text = msg.text.trim();
   if (text.startsWith('/start')) {
+    const payload = text.split(/\s+/)[1] || '';
+    const ref = /^f_([a-z0-9]{8})$/.exec(payload);
+    const openUrl = ref ? `${appUrl}/?f=${ref[1]}` : appUrl;
     await botApi(env.BOT_TOKEN, 'sendMessage', {
       chat_id: msg.chat.id,
-      text: 'Угадай счёт матчей топ-7 лиг, копи ауру и поднимайся в рейтинге. Без ставок и денег, только чуйка.\n\nВход через твой аккаунт Telegram, без паролей и регистрации.',
+      text: ref
+        ? 'Тебя позвали в Точняк. Угадывай счёт матчей и обгоняй друзей. Без ставок и денег.'
+        : 'Угадывай счёт матчей топ-лиг, копи ауру и обгоняй друзей. Без ставок и денег.',
       reply_markup: {
         inline_keyboard: [
-          [{ text: 'Открыть Точняк', web_app: { url: appUrl } }],
+          [{ text: ref ? 'Играть с другом' : 'Открыть Точняк', web_app: { url: openUrl } }],
           [{ text: 'Политика конфиденциальности', url: `${appUrl}/privacy.html` }, { text: 'Правила', url: `${appUrl}/terms.html` }]
         ]
       }
@@ -208,6 +308,26 @@ async function handleBot(request, env, url) {
     });
   }
   return new Response('ok');
+}
+
+// Эмблемы клубов: берём у football-data.org и кэшируем на неделю.
+const CREST_TYPES = { png: 'image/png', svg: 'image/svg+xml', gif: 'image/gif' };
+async function handleCrest(url) {
+  const m = /^\/crest\/([A-Za-z0-9_-]{1,40})\.(png|svg|gif)$/.exec(url.pathname);
+  if (!m) return new Response('not found', { status: 404 });
+  const upstream = await fetch(`https://crests.football-data.org/${m[1]}.${m[2]}`, {
+    cf: { cacheEverything: true, cacheTtl: 604800 }
+  });
+  if (!upstream.ok) return new Response('not found', { status: 404 });
+  return new Response(upstream.body, {
+    headers: {
+      'content-type': CREST_TYPES[m[2]],
+      'cache-control': 'public, max-age=604800, immutable',
+      // SVG с чужого сервера: запрещаем в нём скрипты и любые загрузки.
+      'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; img-src data:; sandbox",
+      'x-content-type-options': 'nosniff'
+    }
+  });
 }
 
 // Разовая настройка бота: открой https://<адрес-воркера>/setup?key=<WEBHOOK_SECRET> в браузере.
@@ -245,6 +365,7 @@ export default {
         await ensureSchema(env.DB);
       }
       if (url.pathname.startsWith('/api/')) return await handleApi(request, env, url, now);
+      if (url.pathname.startsWith('/crest/')) return await handleCrest(url);
       if (url.pathname === '/bot/webhook' && request.method === 'POST') return await handleBot(request, env, url);
       if (url.pathname === '/setup') return await handleSetup(env, url, now);
       if (url.pathname === '/health') {

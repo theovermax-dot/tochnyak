@@ -134,3 +134,50 @@ test('неделя начинается в понедельник 00:00 по М�
   // Понедельник 02.11.2026 00:30 МСК = воскресенье 21:30 UTC, уже новая неделя.
   assert.equal(weekStartIso(Date.parse('2026-11-01T21:30:00Z')), '2026-11-01T21:00:00.000Z');
 });
+
+test('друзья: приглашение по коду, общий рейтинг, удаление', async () => {
+  const env = makeEnv();
+  let r = await call(env, '/api/auth', { user: max, method: 'POST', body: { accept: true } });
+  const code = r.data.profile.friendCode;
+  assert.match(code, /^[a-z0-9]{8}$/);
+  await call(env, '/api/auth', { user: vitya, method: 'POST', body: { accept: true } });
+
+  r = await call(env, '/api/friends', { user: vitya, method: 'POST', body: { code } });
+  assert.deepEqual(r.data, { added: true, name: 'Макс' });
+  r = await call(env, '/api/friends', { user: vitya, method: 'POST', body: { code } });
+  assert.equal(r.data.added, false, 'повторно не дублируется');
+  r = await call(env, '/api/friends', { user: max, method: 'POST', body: { code } });
+  assert.equal(r.data.self, true);
+  r = await call(env, '/api/friends', { user: max, method: 'POST', body: { code: 'zzzzzzzz' } });
+  assert.equal(r.status, 404);
+
+  r = await call(env, '/api/friends?period=all', { user: max });
+  assert.equal(r.data.rows.length, 2, 'дружба взаимная');
+  assert.equal(r.data.link, `https://t.me/tochnyak_bot?start=f_${code}`);
+  const vityaCode = r.data.rows.find((x) => !x.isMe).code;
+  assert.equal(r.data.rows.find((x) => x.isMe).code, null);
+
+  r = await call(env, '/api/me', { user: vitya });
+  assert.equal(r.data.profile.friendsCount, 1);
+
+  r = await call(env, `/api/friends?code=${vityaCode}`, { user: max, method: 'DELETE' });
+  r = await call(env, '/api/friends', { user: vitya });
+  assert.equal(r.data.rows.length, 1);
+});
+
+test('мои прогнозы и эмблемы клубов', async () => {
+  const env = makeEnv();
+  await call(env, '/api/auth', { user: max, method: 'POST', body: { accept: true } });
+  const raw = rawMatch(200, new Date(Date.now() + 3600000).toISOString());
+  raw.homeTeam.crest = 'https://crests.football-data.org/57.png';
+  raw.awayTeam.crest = 'https://evil.example/x.svg';
+  await upsertMatches(env.DB, [raw]);
+  await call(env, '/api/predictions', { user: max, method: 'POST', body: { matchId: 200, home: 1, away: 0 } });
+  const r = await call(env, '/api/my', { user: max });
+  assert.equal(r.data.items.length, 1);
+  assert.equal(r.data.items[0].home.crest, '/crest/57.png');
+  assert.equal(r.data.items[0].away.crest, null, 'чужие адреса не пропускаем');
+  assert.deepEqual(r.data.items[0].prediction, { home: 1, away: 0, points: null });
+  const bad = await worker.fetch(new Request('https://tochnyak.test/crest/a%2Fb.png'), env);
+  assert.equal(bad.status, 404);
+});

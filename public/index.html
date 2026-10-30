@@ -15,32 +15,53 @@
 <body>
 <div class="bg" aria-hidden="true"></div>
 
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-ball" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7.5l4 2.9-1.5 4.7h-5L8 10.4z"/><path d="M12 3v4.5M16 10.4l4.4-1.3M14.5 15.1l2.7 3.8M9.5 15.1l-2.7 3.8M8 10.4L3.6 9.1"/></symbol>
+  <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.2"/></symbol>
+  <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.6 3.4-5.5 6.5-5.5s5.7 1.9 6.5 5.5"/><path d="M16 4.6a3.5 3.5 0 0 1 0 6.8M18.5 14.8c1.6.8 2.6 2.5 3 5.2"/></symbol>
+  <symbol id="i-chart" viewBox="0 0 24 24"><path d="M6 20V11M12 20V5M18 20v-6"/></symbol>
+  <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c1-4.2 4.2-6.5 8-6.5s7 2.3 8 6.5"/></symbol>
+  <symbol id="i-shirt" viewBox="0 0 24 24"><path d="M8 3l-5 3 2 4 2-1v12h10V9l2 1 2-4-5-3c-.5 1.7-2 2.8-4 2.8S8.5 4.7 8 3z"/></symbol>
+  <symbol id="i-book" viewBox="0 0 24 24"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5z"/><path d="M4 20.5A2.5 2.5 0 0 0 6.5 23H20v-5"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 4.5-3.4 8-8 9-4.6-1-8-4.5-8-9V6z"/></symbol>
+  <symbol id="i-share" viewBox="0 0 24 24"><path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7M16 6l-4-4-4 4M12 2v13"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="13" height="13" rx="3"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+  <symbol id="i-back" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2.5"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></symbol>
+  <symbol id="i-cap" viewBox="0 0 24 24"><path d="M3 15c0-5 4-9 9-9s8 3.5 8 7.5V15z"/><path d="M14 15h8"/></symbol>
+  <symbol id="i-glasses" viewBox="0 0 24 24"><circle cx="7" cy="14" r="3.5"/><circle cx="17" cy="14" r="3.5"/><path d="M10.5 14h3M3.5 13l1-5M20.5 13l-1-5"/></symbol>
+  <symbol id="i-pants" viewBox="0 0 24 24"><path d="M6 3h12l1 18h-5l-2-11-2 11H5z"/></symbol>
+  <symbol id="i-shoe" viewBox="0 0 24 24"><path d="M3 17V9l5 1 3 3 6 1c2.5.4 4 1.6 4 3v1H3z"/><path d="M3 18h18"/></symbol>
+</svg>
+
 <main id="gate" class="gate">
   <div class="gate-inner">
     <svg class="mark-big" width="88" height="88" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="14" fill="none" stroke="#FF2E63" stroke-width="1.6"/><circle cx="16" cy="16" r="7.5" fill="none" stroke="#FF2E63" stroke-width="1.6"/><circle cx="16" cy="16" r="2.6" fill="#F5F2F4"/></svg>
     <h1 class="wordmark">ТОЧНЯК</h1>
-    <p class="gate-lead">Угадывай счёт матчей топ-7 лиг, копи ауру и поднимайся в рейтинге. Без ставок и денег, только чуйка.</p>
+    <p class="gate-lead">Угадай счёт. Копи ауру. Обгоняй друзей.</p>
 
-    <div id="gate-loading" class="gate-state"><span class="spinner" aria-hidden="true"></span><span>Загружаем…</span></div>
+    <div id="gate-loading" class="gate-state"><span class="spinner" aria-hidden="true"></span></div>
 
     <div id="gate-outside" class="gate-state" hidden>
-      <p class="muted">Точняк работает внутри Telegram. Открой бота и нажми «Играть».</p>
+      <p class="muted">Точняк работает внутри Telegram.</p>
       <a class="btn btn-primary" href="https://t.me/tochnyak_bot">Открыть в Telegram</a>
     </div>
 
     <div id="gate-login" class="gate-state" hidden>
       <div class="glass tg-card">
         <span class="avatar" id="login-avatar" aria-hidden="true">?</span>
-        <span><b id="login-name">Игрок</b><br><span class="muted">Аккаунт Telegram</span></span>
+        <span><b id="login-name">Игрок</b><br><span class="muted small">Аккаунт Telegram</span></span>
       </div>
       <button id="login-btn" class="btn btn-primary" type="button">Войти через Telegram</button>
-      <p class="legal-note">Нажимая «Войти», ты принимаешь <a href="/terms.html">правила игры</a> и соглашаешься с <a href="/privacy.html">политикой конфиденциальности</a>. Мы сохраним только твой ID в Telegram, имя, username и язык. Пароль не нужен.</p>
+      <p class="legal-note">Нажимая «Войти», ты принимаешь <a href="/terms.html">правила</a> и <a href="/privacy.html">политику конфиденциальности</a>. Сохраним только ID, имя и username из Telegram.</p>
       <p id="login-error" class="error" role="alert" hidden></p>
     </div>
 
     <div id="gate-error" class="gate-state" hidden>
       <p class="error" id="gate-error-text" role="alert">Не получилось загрузиться.</p>
-      <button class="btn btn-glass" type="button" id="retry-btn">Попробовать ещё раз</button>
+      <button class="btn btn-glass" type="button" id="retry-btn">Ещё раз</button>
     </div>
   </div>
 </main>
@@ -48,19 +69,42 @@
 <div id="app" hidden>
   <header class="topbar">
     <div class="brand">
-      <svg width="28" height="28" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="14" fill="none" stroke="#FF2E63" stroke-width="2"/><circle cx="16" cy="16" r="7" fill="none" stroke="#FF2E63" stroke-width="2"/><circle cx="16" cy="16" r="2.5" fill="#F5F2F4"/></svg>
+      <svg width="26" height="26" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="14" fill="none" stroke="#FF2E63" stroke-width="2.2"/><circle cx="16" cy="16" r="7" fill="none" stroke="#FF2E63" stroke-width="2.2"/><circle cx="16" cy="16" r="2.5" fill="#F5F2F4"/></svg>
       <span class="wordmark-sm">ТОЧНЯК</span>
     </div>
     <button class="glass aura-pill" type="button" data-go="profile" aria-label="Профиль">
+      <span class="num" id="top-aura">0</span><span class="aura-word">аура</span>
       <span class="avatar avatar-sm" id="top-avatar" aria-hidden="true"></span>
-      <span class="num" id="top-aura">0</span><span class="muted small">ауры</span>
     </button>
   </header>
 
   <section id="view-matches" class="view" aria-label="Матчи">
     <div id="hero"></div>
     <div class="chips" id="league-chips" role="tablist" aria-label="Лиги"></div>
-    <div id="match-list"></div>
+    <div id="match-list" class="days"></div>
+  </section>
+
+  <section id="view-my" class="view" aria-label="Мои прогнозы" hidden>
+    <h2 class="title">Мои прогнозы</h2>
+    <div id="my-stats"></div>
+    <div class="glass segmented" role="tablist">
+      <button type="button" role="tab" data-mytab="wait" aria-selected="true">Ждут</button>
+      <button type="button" role="tab" data-mytab="done" aria-selected="false">Сыграны</button>
+    </div>
+    <div id="my-list"></div>
+  </section>
+
+  <section id="view-friends" class="view" aria-label="Друзья" hidden>
+    <h2 class="title">Друзья</h2>
+    <div class="invite-row">
+      <button type="button" class="btn btn-primary" id="invite-btn"><svg class="ic" aria-hidden="true"><use href="#i-share"/></svg>Позвать друга</button>
+      <button type="button" class="btn btn-glass btn-square" id="copy-btn" aria-label="Скопировать ссылку"><svg class="ic" aria-hidden="true"><use href="#i-copy"/></svg></button>
+    </div>
+    <div class="glass segmented" role="tablist">
+      <button type="button" role="tab" data-fperiod="week" aria-selected="true">Неделя</button>
+      <button type="button" role="tab" data-fperiod="all" aria-selected="false">Всё время</button>
+    </div>
+    <div id="friends-list"></div>
   </section>
 
   <section id="view-rating" class="view" aria-label="Рейтинг" hidden>
@@ -74,57 +118,55 @@
   </section>
 
   <section id="view-profile" class="view" aria-label="Профиль" hidden>
-    <h2 class="title">Профиль</h2>
     <div id="profile-card"></div>
-    <div class="glass list-card">
-      <a class="row-link" href="/privacy.html">Политика конфиденциальности <span aria-hidden="true">›</span></a>
-      <a class="row-link" href="/terms.html">Правила игры <span aria-hidden="true">›</span></a>
-      <div class="rules muted small">Точный счёт 10 ауры, разница мячей 6, исход 3. Бонусы: «обе забьют» +1, тотал больше/меньше 2,5 +1. Редкий исход (меньше 10% игроков) удваивает основу, от 10 до 25% даёт ×1,5. Приём прогнозов закрывается за 5 минут до начала.</div>
+    <div class="tiles">
+      <button type="button" class="glass tile" data-go="wardrobe"><svg class="ic" aria-hidden="true"><use href="#i-shirt"/></svg><span>Гардероб</span></button>
+      <button type="button" class="glass tile" data-go="friends"><svg class="ic" aria-hidden="true"><use href="#i-users"/></svg><span>Друзья <b id="friends-count" class="num"></b></span></button>
+      <button type="button" class="glass tile" id="rules-btn"><svg class="ic" aria-hidden="true"><use href="#i-book"/></svg><span>Как считается аура</span></button>
+      <a class="glass tile" href="/privacy.html"><svg class="ic" aria-hidden="true"><use href="#i-shield"/></svg><span>Данные и политика</span></a>
     </div>
-    <button type="button" id="delete-btn" class="btn btn-danger">Удалить аккаунт и данные</button>
+    <button type="button" id="delete-btn" class="btn btn-ghost"><svg class="ic" aria-hidden="true"><use href="#i-trash"/></svg>Удалить аккаунт</button>
+  </section>
+
+  <section id="view-wardrobe" class="view" aria-label="Гардероб" hidden>
+    <div class="subhead">
+      <button type="button" class="glass icon-btn" data-go="profile" aria-label="Назад"><svg class="ic" aria-hidden="true"><use href="#i-back"/></svg></button>
+      <h2 class="title">Гардероб</h2>
+      <span class="glass coins"><span class="coin" aria-hidden="true"></span><span class="num">0</span></span>
+    </div>
+    <div class="glass stage">
+      <svg class="dude" viewBox="0 0 160 260" aria-label="Твой персонаж">
+        <ellipse cx="80" cy="250" rx="46" ry="6" fill="rgba(0,0,0,.45)"/>
+        <g data-slot="shoes"><path d="M46 236h28v10H40c0-6 2-10 6-10zM86 236h28c4 0 6 4 6 10H86z" fill="#F5F2F4"/></g>
+        <g data-slot="pants"><path d="M52 150h56l-4 88H86l-6-60-6 60H56z" fill="#2a2f3d"/></g>
+        <g data-slot="shirt"><path d="M50 84c6-6 16-8 30-8s24 2 30 8l14 34-14 6-4-12v40H54v-40l-4 12-14-6z" fill="#C50337"/></g>
+        <circle cx="80" cy="52" r="24" fill="#e9c9b5"/>
+        <g data-slot="cap"><path d="M56 48c0-14 10-24 24-24s24 10 24 22H56z" fill="#F5F2F4"/><path d="M98 46h20v5H98z" fill="#F5F2F4"/></g>
+      </svg>
+      <span class="stage-note">Вещи появятся скоро</span>
+    </div>
+    <div class="chips" id="wardrobe-tabs" role="tablist" aria-label="Категории"></div>
+    <div class="items" id="wardrobe-items"></div>
   </section>
 
   <nav class="glass tabbar" aria-label="Разделы">
-    <button type="button" data-go="matches" aria-current="page">
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="17" rx="3"/><path d="M3 9h18M8 2v4M16 2v4"/></svg>Матчи</button>
-    <button type="button" data-go="rating">
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 20V11M12 20V5M18 20v-6"/></svg>Рейтинг</button>
-    <button type="button" data-go="profile">
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c1-4.2 4.2-6.5 8-6.5s7 2.3 8 6.5"/></svg>Профиль</button>
+    <button type="button" data-go="matches" aria-current="page"><svg class="ic" aria-hidden="true"><use href="#i-ball"/></svg>Матчи</button>
+    <button type="button" data-go="my"><svg class="ic" aria-hidden="true"><use href="#i-target"/></svg>Мои</button>
+    <button type="button" data-go="friends"><svg class="ic" aria-hidden="true"><use href="#i-users"/></svg>Друзья</button>
+    <button type="button" data-go="rating"><svg class="ic" aria-hidden="true"><use href="#i-chart"/></svg>Рейтинг</button>
+    <button type="button" data-go="profile"><svg class="ic" aria-hidden="true"><use href="#i-user"/></svg>Профиль</button>
   </nav>
 </div>
 
 <div id="sheet" class="sheet" hidden>
   <div class="sheet-backdrop" data-close></div>
-  <div class="sheet-panel glass" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
-    <div class="sheet-handle" aria-hidden="true"></div>
-    <p class="muted small center" id="sheet-meta"></p>
-    <h3 class="sr-only" id="sheet-title">Прогноз на матч</h3>
-    <div class="score-grid">
-      <div class="team-col">
-        <span class="crest" id="home-crest"></span>
-        <span class="team-name" id="home-name"></span>
-        <span class="big-score num" id="home-score">0</span>
-        <div class="steppers">
-          <button type="button" class="glass step" data-step="home:-1" aria-label="Хозяева: на гол меньше">−</button>
-          <button type="button" class="glass step" data-step="home:1" aria-label="Хозяева: на гол больше">+</button>
-        </div>
-      </div>
-      <div class="team-col">
-        <span class="crest crest-away" id="away-crest"></span>
-        <span class="team-name" id="away-name"></span>
-        <span class="big-score num" id="away-score">0</span>
-        <div class="steppers">
-          <button type="button" class="glass step" data-step="away:-1" aria-label="Гости: на гол меньше">−</button>
-          <button type="button" class="glass step" data-step="away:1" aria-label="Гости: на гол больше">+</button>
-        </div>
-      </div>
+  <div class="sheet-panel" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
+    <div class="sheet-top">
+      <span class="sheet-meta" id="sheet-meta"></span>
+      <button type="button" class="icon-btn icon-btn-flat" data-close aria-label="Закрыть"><svg class="ic" aria-hidden="true"><use href="#i-x"/></svg></button>
     </div>
-    <div class="pills" id="sheet-pills"></div>
-    <p class="muted small center">Сколько людей выбрали такой же исход, станет видно после начала матча.</p>
-    <button type="button" id="save-btn" class="btn btn-primary">Залочить</button>
-    <p id="sheet-error" class="error center" role="alert" hidden></p>
-    <button type="button" class="btn btn-ghost" data-close>Отмена</button>
+    <h3 class="sr-only" id="sheet-title">Матч</h3>
+    <div id="sheet-body"></div>
   </div>
 </div>
 

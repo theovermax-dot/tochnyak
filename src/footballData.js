@@ -17,6 +17,13 @@ export function regularScore(score) {
   return { home: s.home, away: s.away };
 }
 
+// Из адреса эмблемы оставляем только имя файла: картинки отдаём через свой /crest/,
+// чтобы устройство игрока не ходило на сторонний сервер.
+export function crestFile(url) {
+  const m = /^https:\/\/crests\.football-data\.org\/([A-Za-z0-9_-]{1,40}\.(?:png|svg|gif))$/.exec(url || '');
+  return m ? m[1] : null;
+}
+
 export function mapMatch(m, now = Date.now()) {
   if (!m.homeTeam || !m.awayTeam || !m.homeTeam.name || !m.awayTeam.name) return null;
   const score = regularScore(m.score);
@@ -34,6 +41,8 @@ export function mapMatch(m, now = Date.now()) {
     awayName: m.awayTeam.name,
     awayShort: short(m.awayTeam),
     awayTla: tla(m.awayTeam),
+    homeCrest: crestFile(m.homeTeam.crest),
+    awayCrest: crestFile(m.awayTeam.crest),
     homeScore: score ? score.home : null,
     awayScore: score ? score.away : null,
     updatedAt: nowIso(now)
@@ -66,10 +75,16 @@ export async function upsertMatches(db, rawMatches, now = Date.now()) {
       away_name = excluded.away_name, away_short = excluded.away_short, away_tla = excluded.away_tla,
       home_score = excluded.home_score, away_score = excluded.away_score, updated_at = excluded.updated_at
     WHERE matches.settled = 0`);
-  await db.batch(rows.map((r) => stmt.bind(
-    r.id, r.competition, r.competitionName, r.utcDate, r.status, r.homeName, r.homeShort, r.homeTla,
-    r.awayName, r.awayShort, r.awayTla, r.homeScore, r.awayScore, r.updatedAt
-  )));
+  // Эмблемы обновляем и у уже рассчитанных матчей.
+  const crests = db.prepare(`UPDATE matches SET home_crest = ?2, away_crest = ?3
+    WHERE id = ?1 AND (home_crest IS NOT ?2 OR away_crest IS NOT ?3)`);
+  await db.batch(rows.flatMap((r) => [
+    stmt.bind(
+      r.id, r.competition, r.competitionName, r.utcDate, r.status, r.homeName, r.homeShort, r.homeTla,
+      r.awayName, r.awayShort, r.awayTla, r.homeScore, r.awayScore, r.updatedAt
+    ),
+    crests.bind(r.id, r.homeCrest, r.awayCrest)
+  ]));
   return rows.length;
 }
 

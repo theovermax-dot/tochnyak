@@ -46,14 +46,38 @@ const SCHEMA = [
   )`,
   `CREATE INDEX IF NOT EXISTS predictions_by_match ON predictions (match_id)`,
   `CREATE INDEX IF NOT EXISTS predictions_by_settled ON predictions (settled_at)`,
-  `CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)`
+  `CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)`,
+  // Друзья: связь хранится в обе стороны, чтобы список читался одним запросом.
+  `CREATE TABLE IF NOT EXISTS friends (
+    user_id INTEGER NOT NULL,
+    friend_id INTEGER NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (user_id, friend_id)
+  )`
 ];
+
+// Колонки, добавленные после первого запуска. ALTER падает, если колонка уже есть, это нормально.
+const COLUMNS = [
+  'ALTER TABLE matches ADD COLUMN home_crest TEXT',
+  'ALTER TABLE matches ADD COLUMN away_crest TEXT',
+  'ALTER TABLE users ADD COLUMN friend_code TEXT'
+];
+
+async function migrate(db) {
+  await db.batch(SCHEMA.map((sql) => db.prepare(sql)));
+  for (const sql of COLUMNS) {
+    try { await db.prepare(sql).run(); } catch (err) {
+      if (!/duplicate column/i.test(String(err && err.message))) throw err;
+    }
+  }
+  await db.prepare('CREATE UNIQUE INDEX IF NOT EXISTS users_by_friend_code ON users (friend_code)').run();
+}
 
 let schemaReady = null;
 
 export function ensureSchema(db) {
   if (!schemaReady) {
-    schemaReady = db.batch(SCHEMA.map((sql) => db.prepare(sql))).catch((err) => {
+    schemaReady = migrate(db).catch((err) => {
       schemaReady = null;
       throw err;
     });
@@ -67,3 +91,10 @@ export function resetSchemaFlag() {
 }
 
 export const nowIso = (now = Date.now()) => new Date(now).toISOString();
+
+// Код для ссылки-приглашения: 8 символов без похожих букв и цифр.
+const CODE_ALPHABET = 'abcdefghjkmnpqrstuvwxyz23456789';
+export function newFriendCode() {
+  const bytes = crypto.getRandomValues(new Uint8Array(8));
+  return Array.from(bytes, (b) => CODE_ALPHABET[b % CODE_ALPHABET.length]).join('');
+}
