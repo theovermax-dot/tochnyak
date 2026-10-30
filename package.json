@@ -1,0 +1,18 @@
+{
+  "name": "tochnyak",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Точняк — Telegram Mini App: угадай счёт матча, копи ауру, поднимайся в рейтинге",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "test": "node --no-warnings --test test/*.test.js"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

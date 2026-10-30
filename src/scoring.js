@@ -1,0 +1,63 @@
+// Правила начисления ауры. Один файл, чтобы правила было легко менять.
+//
+// За матч засчитывается лучший из трёх результатов:
+//   точный счёт 10, верная разница мячей 6, только исход 3.
+// Бонусы (считаются из счёта прогноза, отдельно от основы):
+//   «обе забьют» угадано +1, тотал больше/меньше 2,5 угадан +1.
+// Редкость: если исход угадан и его выбрали меньше 10% игроков, основа ×2,
+//   от 10 до 25% ×1,5. Работает, только когда на матч есть хотя бы
+//   RARITY_MIN_PREDICTIONS прогнозов, иначе проценты ничего не значат.
+
+export const POINTS = { exact: 10, diff: 6, outcome: 3, btts: 1, total: 1 };
+export const RARITY_MIN_PREDICTIONS = 20;
+
+export function outcomeOf(home, away) {
+  if (home > away) return 'home';
+  if (home < away) return 'away';
+  return 'draw';
+}
+
+export function basePoints(pred, result) {
+  if (pred.home === result.home && pred.away === result.away) return POINTS.exact;
+  const sameOutcome = outcomeOf(pred.home, pred.away) === outcomeOf(result.home, result.away);
+  if (!sameOutcome) return 0;
+  if (pred.home - pred.away === result.home - result.away) return POINTS.diff;
+  return POINTS.outcome;
+}
+
+export function bonusPoints(pred, result) {
+  let bonus = 0;
+  const bttsPred = pred.home > 0 && pred.away > 0;
+  const bttsResult = result.home > 0 && result.away > 0;
+  if (bttsPred === bttsResult) bonus += POINTS.btts;
+  const overPred = pred.home + pred.away > 2.5;
+  const overResult = result.home + result.away > 2.5;
+  if (overPred === overResult) bonus += POINTS.total;
+  return bonus;
+}
+
+// share — доля игроков (0..1), выбравших тот же исход, что и этот прогноз.
+export function rarityMultiplier(share, totalPredictions) {
+  if (totalPredictions < RARITY_MIN_PREDICTIONS) return 1;
+  if (share < 0.10) return 2;
+  if (share < 0.25) return 1.5;
+  return 1;
+}
+
+// Считает ауру за все прогнозы одного матча.
+// predictions: [{ userId, home, away }], result: { home, away }
+// Возвращает [{ userId, points, base, bonus, multiplier }].
+export function scoreMatch(predictions, result) {
+  const total = predictions.length;
+  const counts = { home: 0, draw: 0, away: 0 };
+  for (const p of predictions) counts[outcomeOf(p.home, p.away)] += 1;
+
+  return predictions.map((p) => {
+    const base = basePoints(p, result);
+    const bonus = bonusPoints(p, result);
+    const share = total ? counts[outcomeOf(p.home, p.away)] / total : 1;
+    const multiplier = base > 0 ? rarityMultiplier(share, total) : 1;
+    const points = Math.round(base * multiplier) + bonus;
+    return { userId: p.userId, points, base, bonus, multiplier };
+  });
+}

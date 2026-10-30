@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#02060E">
+<title>Точняк</title>
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@600;800&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/style.css">
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+</head>
+<body>
+<div class="bg" aria-hidden="true"></div>
+
+<main id="gate" class="gate">
+  <div class="gate-inner">
+    <svg class="mark-big" width="88" height="88" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="14" fill="none" stroke="#FF2E63" stroke-width="1.6"/><circle cx="16" cy="16" r="7.5" fill="none" stroke="#FF2E63" stroke-width="1.6"/><circle cx="16" cy="16" r="2.6" fill="#F5F2F4"/></svg>
+    <h1 class="wordmark">ТОЧНЯК</h1>
+    <p class="gate-lead">Угадывай счёт матчей топ-7 лиг, копи ауру и поднимайся в рейтинге. Без ставок и денег, только чуйка.</p>
+
+    <div id="gate-loading" class="gate-state"><span class="spinner" aria-hidden="true"></span><span>Загружаем…</span></div>
+
+    <div id="gate-outside" class="gate-state" hidden>
+      <p class="muted">Точняк работает внутри Telegram. Открой бота и нажми «Играть».</p>
+      <a class="btn btn-primary" href="https://t.me/tochnyak_bot">Открыть в Telegram</a>
+    </div>
+
+    <div id="gate-login" class="gate-state" hidden>
+      <div class="glass tg-card">
+        <span class="avatar" id="login-avatar" aria-hidden="true">?</span>
+        <span><b id="login-name">Игрок</b><br><span class="muted">Аккаунт Telegram</span></span>
+      </div>
+      <button id="login-btn" class="btn btn-primary" type="button">Войти через Telegram</button>
+      <p class="legal-note">Нажимая «Войти», ты принимаешь <a href="/terms.html">правила игры</a> и соглашаешься с <a href="/privacy.html">политикой конфиденциальности</a>. Мы сохраним только твой ID в Telegram, имя, username и язык. Пароль не нужен.</p>
+      <p id="login-error" class="error" role="alert" hidden></p>
+    </div>
+
+    <div id="gate-error" class="gate-state" hidden>
+      <p class="error" id="gate-error-text" role="alert">Не получилось загрузиться.</p>
+      <button class="btn btn-glass" type="button" id="retry-btn">Попробовать ещё раз</button>
+    </div>
+  </div>
+</main>
+
+<div id="app" hidden>
+  <header class="topbar">
+    <div class="brand">
+      <svg width="28" height="28" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="14" fill="none" stroke="#FF2E63" stroke-width="2"/><circle cx="16" cy="16" r="7" fill="none" stroke="#FF2E63" stroke-width="2"/><circle cx="16" cy="16" r="2.5" fill="#F5F2F4"/></svg>
+      <span class="wordmark-sm">ТОЧНЯК</span>
+    </div>
+    <button class="glass aura-pill" type="button" data-go="profile" aria-label="Профиль">
+      <span class="avatar avatar-sm" id="top-avatar" aria-hidden="true"></span>
+      <span class="num" id="top-aura">0</span><span class="muted small">ауры</span>
+    </button>
+  </header>
+
+  <section id="view-matches" class="view" aria-label="Матчи">
+    <div id="hero"></div>
+    <div class="chips" id="league-chips" role="tablist" aria-label="Лиги"></div>
+    <div id="match-list"></div>
+  </section>
+
+  <section id="view-rating" class="view" aria-label="Рейтинг" hidden>
+    <h2 class="title">Рейтинг</h2>
+    <div class="glass segmented" role="tablist">
+      <button type="button" role="tab" data-period="week" aria-selected="true">Неделя</button>
+      <button type="button" role="tab" data-period="all" aria-selected="false">Всё время</button>
+    </div>
+    <div id="rating-me"></div>
+    <div id="rating-list"></div>
+  </section>
+
+  <section id="view-profile" class="view" aria-label="Профиль" hidden>
+    <h2 class="title">Профиль</h2>
+    <div id="profile-card"></div>
+    <div class="glass list-card">
+      <a class="row-link" href="/privacy.html">Политика конфиденциальности <span aria-hidden="true">›</span></a>
+      <a class="row-link" href="/terms.html">Правила игры <span aria-hidden="true">›</span></a>
+      <div class="rules muted small">Точный счёт 10 ауры, разница мячей 6, исход 3. Бонусы: «обе забьют» +1, тотал больше/меньше 2,5 +1. Редкий исход (меньше 10% игроков) удваивает основу, от 10 до 25% даёт ×1,5. Приём прогнозов закрывается за 5 минут до начала.</div>
+    </div>
+    <button type="button" id="delete-btn" class="btn btn-danger">Удалить аккаунт и данные</button>
+  </section>
+
+  <nav class="glass tabbar" aria-label="Разделы">
+    <button type="button" data-go="matches" aria-current="page">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="17" rx="3"/><path d="M3 9h18M8 2v4M16 2v4"/></svg>Матчи</button>
+    <button type="button" data-go="rating">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 20V11M12 20V5M18 20v-6"/></svg>Рейтинг</button>
+    <button type="button" data-go="profile">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c1-4.2 4.2-6.5 8-6.5s7 2.3 8 6.5"/></svg>Профиль</button>
+  </nav>
+</div>
+
+<div id="sheet" class="sheet" hidden>
+  <div class="sheet-backdrop" data-close></div>
+  <div class="sheet-panel glass" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
+    <div class="sheet-handle" aria-hidden="true"></div>
+    <p class="muted small center" id="sheet-meta"></p>
+    <h3 class="sr-only" id="sheet-title">Прогноз на матч</h3>
+    <div class="score-grid">
+      <div class="team-col">
+        <span class="crest" id="home-crest"></span>
+        <span class="team-name" id="home-name"></span>
+        <span class="big-score num" id="home-score">0</span>
+        <div class="steppers">
+          <button type="button" class="glass step" data-step="home:-1" aria-label="Хозяева: на гол меньше">−</button>
+          <button type="button" class="glass step" data-step="home:1" aria-label="Хозяева: на гол больше">+</button>
+        </div>
+      </div>
+      <div class="team-col">
+        <span class="crest crest-away" id="away-crest"></span>
+        <span class="team-name" id="away-name"></span>
+        <span class="big-score num" id="away-score">0</span>
+        <div class="steppers">
+          <button type="button" class="glass step" data-step="away:-1" aria-label="Гости: на гол меньше">−</button>
+          <button type="button" class="glass step" data-step="away:1" aria-label="Гости: на гол больше">+</button>
+        </div>
+      </div>
+    </div>
+    <div class="pills" id="sheet-pills"></div>
+    <p class="muted small center">Сколько людей выбрали такой же исход, станет видно после начала матча.</p>
+    <button type="button" id="save-btn" class="btn btn-primary">Залочить</button>
+    <p id="sheet-error" class="error center" role="alert" hidden></p>
+    <button type="button" class="btn btn-ghost" data-close>Отмена</button>
+  </div>
+</div>
+
+<div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+<script src="/app.js" type="module"></script>
+</body>
+</html>

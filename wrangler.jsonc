@@ -1,0 +1,32 @@
+{
+  // Настройки Cloudflare Worker для «Точняка».
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "tochnyak",
+  "main": "src/index.js",
+  "compatibility_date": "2025-09-01",
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "tochnyak",
+      // Сюда нужно вставить ID базы из Cloudflare: Storage & Databases → D1 → tochnyak.
+      "database_id": "REPLACE_WITH_D1_DATABASE_ID"
+    }
+  ],
+  "triggers": {
+    // Раз в 10 минут: забрать матчи и счета, начислить ауру.
+    "crons": ["*/10 * * * *"]
+  },
+  "vars": {
+    // АПЛ, Ла Лига, Серия А, Бундеслига, Лига 1, Лига чемпионов, Эредивизи.
+    "COMPETITIONS": "PL,PD,SA,BL1,FL1,CL,DED",
+    // За сколько минут до начала матча закрывается приём прогнозов.
+    "LOCK_MINUTES": "5"
+  },
+  "observability": { "enabled": true }
+  // Секреты (BOT_TOKEN, FOOTBALL_DATA_TOKEN, WEBHOOK_SECRET) сюда НЕ пишем.
+  // Они добавляются в Cloudflare: Worker → Settings → Variables and Secrets.
+}
