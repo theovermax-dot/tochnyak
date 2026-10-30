@@ -93,6 +93,7 @@ test('полный круг: прогноз, закрытие, финал, ау�
 
   r = await call(env, '/api/me', { user: max });
   assert.equal(r.data.profile.aura, 12, 'точняк 10 + обе забьют 1 + тотал 1');
+  assert.equal(r.data.profile.coins, 5, 'за точный счёт 5 монет');
   assert.equal(r.data.profile.weekAura, 12);
   assert.equal(r.data.profile.exactHits, 1);
 
@@ -159,6 +160,8 @@ test('друзья: приглашение по коду, общий рейти�
 
   r = await call(env, '/api/me', { user: vitya });
   assert.equal(r.data.profile.friendsCount, 1);
+  r = await call(env, '/api/me', { user: max });
+  assert.equal(r.data.profile.coins, 10, 'новичок по ссылке приносит 10 монет');
 
   r = await call(env, `/api/friends?code=${vityaCode}`, { user: max, method: 'DELETE' });
   r = await call(env, '/api/friends', { user: vitya });

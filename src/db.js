@@ -60,7 +60,8 @@ const SCHEMA = [
 const COLUMNS = [
   'ALTER TABLE matches ADD COLUMN home_crest TEXT',
   'ALTER TABLE matches ADD COLUMN away_crest TEXT',
-  'ALTER TABLE users ADD COLUMN friend_code TEXT'
+  'ALTER TABLE users ADD COLUMN friend_code TEXT',
+  'ALTER TABLE users ADD COLUMN coins INTEGER NOT NULL DEFAULT 0'
 ];
 
 async function migrate(db) {

@@ -4,6 +4,7 @@
 import { ensureSchema, nowIso, newFriendCode } from './db.js';
 import { validateInitData, botApi } from './telegram.js';
 import { syncAndSettle } from './footballData.js';
+import { COINS } from './scoring.js';
 
 const MAX_GOALS = 15;
 const MAX_FRIENDS = 300;
@@ -52,6 +53,24 @@ export function inviteCaption(name) {
   ].join('\n');
 }
 
+// Приветствие бота на /start. inviter — имя пригласившего, если человек пришёл по ссылке друга.
+export function welcomeCaption(inviter) {
+  const head = inviter
+    ? `<b>${escHtml(String(inviter).slice(0, 32))} бросает тебе вызов в Точняке</b>`
+    : '<b>Точняк — прогнозы на футбол, где решает точность</b>';
+  return [
+    head,
+    '',
+    'Угадывай счёт матчей АПЛ, Ла Лиги, Серии А, Бундеслиги, Лиги 1, Эредивизи и Лиги чемпионов.',
+    '',
+    '🎯 Точный счёт — <b>+10 ауры</b>',
+    '🏆 Недельный рейтинг и лига друзей',
+    '👕 Монеты на гардероб персонажа',
+    '',
+    'Вход через Telegram, без регистрации. Игра бесплатная: без ставок и без денег.'
+  ].join('\n');
+}
+
 const crestUrl = (file) => (file ? `/crest/${file}` : null);
 
 function matchOut(m, env, now) {
@@ -96,6 +115,13 @@ async function addFriend(db, userId, code, now) {
     db.prepare('INSERT OR IGNORE INTO friends (user_id, friend_id, created_at) VALUES (?1, ?2, ?3)').bind(friend.id, userId, at)
   ]);
   const added = Boolean(res[0] && res[0].meta && res[0].meta.changes);
+  // Монеты пригласившему: только за новичка, который пришёл в первые сутки после регистрации.
+  if (added) {
+    const me = await db.prepare('SELECT created_at FROM users WHERE id = ?1').bind(userId).first();
+    if (me && now - Date.parse(me.created_at) < 86400000) {
+      await db.prepare('UPDATE users SET coins = coins + ?1 WHERE id = ?2').bind(COINS.friendJoined, friend.id).run();
+    }
+  }
   return { added, name: friend.first_name || 'Игрок' };
 }
 
@@ -105,7 +131,7 @@ async function currentTelegramUser(request, env) {
 }
 
 async function loadProfile(db, userId, now) {
-  const user = await db.prepare('SELECT id, first_name, aura, created_at FROM users WHERE id = ?1').bind(userId).first();
+  const user = await db.prepare('SELECT id, first_name, aura, coins, created_at FROM users WHERE id = ?1').bind(userId).first();
   if (!user) return null;
   const weekStart = weekStartIso(now);
   const week = await db.prepare(
@@ -120,6 +146,7 @@ async function loadProfile(db, userId, now) {
     id: user.id,
     firstName: user.first_name,
     aura: user.aura,
+    coins: user.coins || 0,
     weekAura: week.pts,
     settledPredictions: totals.total || 0,
     exactHits: totals.exact || 0,
@@ -327,19 +354,27 @@ async function handleBot(request, env, url) {
   if (text.startsWith('/start')) {
     const payload = text.split(/\s+/)[1] || '';
     const ref = /^f_([a-z0-9]{8})$/.exec(payload);
+    let inviter = null;
+    if (ref) {
+      await ensureSchema(env.DB);
+      const row = await env.DB.prepare('SELECT first_name FROM users WHERE friend_code = ?1').bind(ref[1]).first();
+      inviter = row ? (row.first_name || 'Друг') : 'Друг';
+    }
     const openUrl = ref ? `${appUrl}/?f=${ref[1]}` : appUrl;
-    await botApi(env.BOT_TOKEN, 'sendMessage', {
-      chat_id: msg.chat.id,
-      text: ref
-        ? 'Тебя позвали в Точняк. Угадывай счёт матчей и обгоняй друзей. Без ставок и денег.'
-        : 'Угадывай счёт матчей топ-лиг, копи ауру и обгоняй друзей. Без ставок и денег.',
-      reply_markup: {
-        inline_keyboard: [
-          [{ text: ref ? 'Играть с другом' : 'Открыть Точняк', web_app: { url: openUrl } }],
-          [{ text: 'Политика конфиденциальности', url: `${appUrl}/privacy.html` }, { text: 'Правила', url: `${appUrl}/terms.html` }]
-        ]
-      }
+    const keyboard = {
+      inline_keyboard: [
+        [{ text: ref ? '⚔️ Принять вызов' : '⚽ Играть', web_app: { url: openUrl } }],
+        [{ text: 'Правила', url: `${appUrl}/terms.html` }, { text: 'Конфиденциальность', url: `${appUrl}/privacy.html` }]
+      ]
+    };
+    const caption = welcomeCaption(inviter);
+    const photo = await botApi(env.BOT_TOKEN, 'sendPhoto', {
+      chat_id: msg.chat.id, photo: `${appUrl}/invite.jpg`, caption, parse_mode: 'HTML', reply_markup: keyboard
     });
+    // Если Telegram не смог забрать картинку, отправляем тот же текст без неё.
+    if (!photo || !photo.ok) {
+      await botApi(env.BOT_TOKEN, 'sendMessage', { chat_id: msg.chat.id, text: caption, parse_mode: 'HTML', reply_markup: keyboard });
+    }
   } else if (text.startsWith('/privacy')) {
     await botApi(env.BOT_TOKEN, 'sendMessage', { chat_id: msg.chat.id, text: `Политика конфиденциальности: ${appUrl}/privacy.html` });
   } else if (text.startsWith('/delete')) {

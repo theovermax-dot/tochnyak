@@ -208,6 +208,8 @@ async function acceptInvite(code) {
 function renderTop() {
   const p = state.profile;
   $('top-aura').textContent = p.aura.toLocaleString('ru-RU');
+  $('top-coins').textContent = (p.coins || 0).toLocaleString('ru-RU');
+  $('wardrobe-coins').textContent = (p.coins || 0).toLocaleString('ru-RU');
   $('top-avatar').textContent = initials(p.firstName);
 }
 
@@ -687,9 +689,9 @@ async function loadProfile() {
 }
 
 $('rules-btn').addEventListener('click', () => {
-  const rows = [['Точный счёт', '+10'], ['Разница мячей', '+6'], ['Исход', '+3'], ['Обе забьют / нет', '+1'], ['Тотал 2,5', '+1'], ['Редкий исход', '×1,5–×2']];
-  $('sheet-meta').innerHTML = '<span class="league-tag">Как считается аура</span>';
-  $('sheet-body').innerHTML = `<div class="glass list-card">${rows.map(([a, b]) => `<div class="rule-row"><span>${a}</span><b class="num">${b}</b></div>`).join('')}</div>
+  const rows = [['Точный счёт', '+10', '+5'], ['Разница мячей', '+6', '+3'], ['Исход', '+3', '+2'], ['Обе забьют / нет', '+1', ''], ['Тотал 2,5', '+1', ''], ['Редкий исход', '×1,5–×2', ''], ['Друг по твоей ссылке', '', '+10']];
+  $('sheet-meta').innerHTML = '<span class="league-tag">Аура и монеты</span>';
+  $('sheet-body').innerHTML = `<div class="glass list-card">${['<div class="rule-row rule-head"><span></span><span>аура</span><span>монеты</span></div>'].concat(rows.map(([a, b, c]) => `<div class="rule-row"><span>${a}</span><b class="num">${b}</b><b class="num coin-val">${c}</b></div>`)).join('')}</div>
     <p class="sheet-foot">Считается основное время. Приём закрывается за 5 минут до матча.</p>
     <a class="btn btn-glass" href="/terms.html">Все правила</a>`;
   state.sheet = { rules: true };

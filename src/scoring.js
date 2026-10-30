@@ -36,6 +36,15 @@ export function bonusPoints(pred, result) {
   return bonus;
 }
 
+// Монеты для гардероба: отдельная валюта, примерно вдвое меньше ауры. Рейтинг от них не зависит.
+export const COINS = { exact: 5, diff: 3, outcome: 2, friendJoined: 10 };
+export function coinsFor(base) {
+  if (base >= POINTS.exact) return COINS.exact;
+  if (base >= POINTS.diff) return COINS.diff;
+  if (base > 0) return COINS.outcome;
+  return 0;
+}
+
 // share — доля игроков (0..1), выбравших тот же исход, что и этот прогноз.
 export function rarityMultiplier(share, totalPredictions) {
   if (totalPredictions < RARITY_MIN_PREDICTIONS) return 1;
@@ -46,7 +55,7 @@ export function rarityMultiplier(share, totalPredictions) {
 
 // Считает ауру за все прогнозы одного матча.
 // predictions: [{ userId, home, away }], result: { home, away }
-// Возвращает [{ userId, points, base, bonus, multiplier }].
+// Возвращает [{ userId, points, base, bonus, multiplier, coins }].
 export function scoreMatch(predictions, result) {
   const total = predictions.length;
   const counts = { home: 0, draw: 0, away: 0 };
@@ -58,6 +67,6 @@ export function scoreMatch(predictions, result) {
     const share = total ? counts[outcomeOf(p.home, p.away)] / total : 1;
     const multiplier = base > 0 ? rarityMultiplier(share, total) : 1;
     const points = Math.round(base * multiplier) + bonus;
-    return { userId: p.userId, points, base, bonus, multiplier };
+    return { userId: p.userId, points, base, bonus, multiplier, coins: coinsFor(base) };
   });
 }

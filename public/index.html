@@ -73,7 +73,9 @@
       <span class="wordmark-sm">ТОЧНЯК</span>
     </div>
     <button class="glass aura-pill" type="button" data-go="profile" aria-label="Профиль">
-      <span class="num" id="top-aura">0</span><span class="aura-word">аура</span>
+      <span class="stat-chip" aria-label="Монеты"><span class="coin" aria-hidden="true"></span><span class="num" id="top-coins">0</span></span>
+      <span class="stat-sep" aria-hidden="true"></span>
+      <span class="stat-chip" aria-label="Аура"><svg class="ic ic-aura" aria-hidden="true"><use href="#i-target"/></svg><span class="num" id="top-aura">0</span></span>
       <span class="avatar avatar-sm" id="top-avatar" aria-hidden="true"></span>
     </button>
   </header>
@@ -122,7 +124,7 @@
     <div class="tiles">
       <button type="button" class="glass tile" data-go="wardrobe"><svg class="ic" aria-hidden="true"><use href="#i-shirt"/></svg><span>Гардероб</span></button>
       <button type="button" class="glass tile" data-go="friends"><svg class="ic" aria-hidden="true"><use href="#i-users"/></svg><span>Друзья <b id="friends-count" class="num"></b></span></button>
-      <button type="button" class="glass tile" id="rules-btn"><svg class="ic" aria-hidden="true"><use href="#i-book"/></svg><span>Как считается аура</span></button>
+      <button type="button" class="glass tile" id="rules-btn"><svg class="ic" aria-hidden="true"><use href="#i-book"/></svg><span>Аура и монеты</span></button>
       <a class="glass tile" href="/privacy.html"><svg class="ic" aria-hidden="true"><use href="#i-shield"/></svg><span>Данные и политика</span></a>
     </div>
     <button type="button" id="delete-btn" class="btn btn-ghost"><svg class="ic" aria-hidden="true"><use href="#i-trash"/></svg>Удалить аккаунт</button>
@@ -132,7 +134,7 @@
     <div class="subhead">
       <button type="button" class="glass icon-btn" data-go="profile" aria-label="Назад"><svg class="ic" aria-hidden="true"><use href="#i-back"/></svg></button>
       <h2 class="title">Гардероб</h2>
-      <span class="glass coins"><span class="coin" aria-hidden="true"></span><span class="num">0</span></span>
+      <span class="glass coins"><span class="coin" aria-hidden="true"></span><span class="num" id="wardrobe-coins">0</span></span>
     </div>
     <div class="glass stage">
       <svg class="dude" viewBox="0 0 160 260" aria-label="Твой персонаж">

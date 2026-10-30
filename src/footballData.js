@@ -109,8 +109,8 @@ export async function settleFinished(db, now = Date.now()) {
       statements.push(db.prepare(
         'UPDATE predictions SET points = ?1, settled_at = ?2 WHERE user_id = ?3 AND match_id = ?4'
       ).bind(s.points, at, s.userId, m.id));
-      if (s.points) {
-        statements.push(db.prepare('UPDATE users SET aura = aura + ?1 WHERE id = ?2').bind(s.points, s.userId));
+      if (s.points || s.coins) {
+        statements.push(db.prepare('UPDATE users SET aura = aura + ?1, coins = coins + ?2 WHERE id = ?3').bind(s.points, s.coins, s.userId));
       }
     }
     statements.push(db.prepare('UPDATE matches SET settled = 1 WHERE id = ?1').bind(m.id));

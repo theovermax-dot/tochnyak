@@ -99,7 +99,11 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--crimson-hi); ou
 .wordmark-sm { font-family: 'Unbounded', sans-serif; font-weight: 800; font-size: 17px; letter-spacing: -0.02em; }
 .aura-pill { display: flex; align-items: center; gap: 6px; height: 40px; padding: 4px 4px 4px 14px; border-radius: 999px; }
 .aura-pill .num { font-size: 14px; font-weight: 800; }
-.aura-word { font-size: 12px; color: var(--muted); font-weight: 700; margin-right: 4px; }
+.stat-chip { display: inline-flex; align-items: center; gap: 5px; }
+.stat-sep { width: 1px; height: 16px; background: var(--glass-line); margin: 0 2px; }
+.ic-aura { width: 15px; height: 15px; color: var(--crimson-hi); stroke-width: 2.2; }
+.aura-pill { padding-right: 4px; }
+.aura-pill .avatar { margin-left: 4px; }
 .view { display: flex; flex-direction: column; gap: 14px; }
 .title { font-family: 'Unbounded', sans-serif; font-size: 22px; font-weight: 600; margin: 2px 0 0; letter-spacing: -0.01em; }
 .subhead { display: flex; align-items: center; gap: 12px; }
@@ -280,8 +284,11 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--crimson-hi); ou
 .mine b { font-size: 18px; }
 .mine-empty { justify-content: center; color: var(--muted); font-weight: 600; }
 .mine-exact { background: rgba(197, 3, 55, 0.2); }
-.rule-row { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--row-line); font-weight: 600; }
+.rule-row { display: grid; grid-template-columns: 1fr 64px 64px; text-align: right; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--row-line); font-weight: 600; }
 .rule-row:last-child { border-bottom: none; }
+.rule-row span:first-child { text-align: left; }
+.rule-head { padding-top: 10px; padding-bottom: 6px; font-size: 11px; font-weight: 700; color: var(--faint); }
+.coin-val { color: #ffd27a !important; }
 .rule-row b { color: var(--green); font-size: 14px; }
 
 .toast {
