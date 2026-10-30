@@ -13,7 +13,7 @@
       "binding": "DB",
       "database_name": "tochnyak",
       // Сюда нужно вставить ID базы из Cloudflare: Storage & Databases → D1 → tochnyak.
-      "database_id": "REPLACE_WITH_D1_DATABASE_ID"
+      "database_id": "22af9cd2-fb7e-4036-a23a-c92679e55ab0"
     }
   ],
   "triggers": {

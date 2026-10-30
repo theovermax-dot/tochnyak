@@ -18,7 +18,7 @@ Telegram Mini App: угадай счёт матчей топ-7 лиг, копи 
 
 ## Запуск в Cloudflare (один раз)
 
-1. **База.** Cloudflare → Storage & Databases → D1 → Create → имя `tochnyak`. Скопируй Database ID и вставь его в `wrangler.jsonc` вместо `REPLACE_WITH_D1_DATABASE_ID`.
+1. **База.** Cloudflare → Storage & Databases → D1 → Create → имя `tochnyak`. Database ID прописан в `wrangler.jsonc`.
 2. **Worker из GitHub.** Workers & Pages → Create → Import a repository → выбери `tochnyak`. Команды оставь по умолчанию (`npx wrangler deploy`).
 3. **Секреты.** Worker → Settings → Variables and Secrets → Add, тип Secret:
    - `BOT_TOKEN` — токен бота из BotFather;
