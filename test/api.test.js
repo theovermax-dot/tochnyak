@@ -178,7 +178,7 @@ test('мои прогнозы и эмблемы клубов', async () => {
   await call(env, '/api/predictions', { user: max, method: 'POST', body: { matchId: 200, home: 1, away: 0 } });
   const r = await call(env, '/api/my', { user: max });
   assert.equal(r.data.items.length, 1);
-  assert.equal(r.data.items[0].home.crest, '/crest/57.png');
+  assert.equal(r.data.items[0].home.crest, '/crest/57.png?v=2');
   assert.equal(r.data.items[0].away.crest, null, 'чужие адреса не пропускаем');
   assert.deepEqual(r.data.items[0].prediction, { home: 1, away: 0, points: null });
   const bad = await worker.fetch(new Request('https://tochnyak.test/crest/a%2Fb.png'), env);

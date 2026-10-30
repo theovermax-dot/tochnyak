@@ -71,7 +71,8 @@ export function welcomeCaption(inviter) {
   ].join('\n');
 }
 
-const crestUrl = (file) => (file ? `/crest/${file}` : null);
+// ?v= сбрасывает старый кэш эмблем в Telegram.
+const crestUrl = (file) => (file ? `/crest/${file}?v=2` : null);
 
 function matchOut(m, env, now) {
   const lockAt = new Date(Date.parse(m.utc_date) - lockMs(env)).toISOString();
@@ -423,8 +424,9 @@ async function handleCrest(url) {
     headers: {
       'content-type': CREST_TYPES[m[2]],
       'cache-control': 'public, max-age=604800, immutable',
-      // SVG с чужого сервера: запрещаем в нём скрипты и любые загрузки.
-      'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; img-src data:; sandbox",
+      // Картинка показывается только внутри <img>. Если открыть адрес напрямую, браузер её скачает,
+      // а не выполнит: так чужой SVG не сможет запустить скрипт на нашем домене.
+      'content-disposition': 'attachment',
       'x-content-type-options': 'nosniff'
     }
   });

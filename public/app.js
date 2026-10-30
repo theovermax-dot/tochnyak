@@ -265,13 +265,16 @@ document.addEventListener('click', (e) => {
 
 // ---------- Время ----------
 
-const timeFmt = new Intl.DateTimeFormat('ru-RU', { hour: '2-digit', minute: '2-digit' });
-const dayFmt = new Intl.DateTimeFormat('ru-RU', { weekday: 'short', day: 'numeric', month: 'long' });
-const shortDayFmt = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'short' });
+// Всё время в приложении московское, независимо от часового пояса телефона.
+const TZ = 'Europe/Moscow';
+const timeFmt = new Intl.DateTimeFormat('ru-RU', { hour: '2-digit', minute: '2-digit', timeZone: TZ });
+const dayFmt = new Intl.DateTimeFormat('ru-RU', { weekday: 'short', day: 'numeric', month: 'long', timeZone: TZ });
+const shortDayFmt = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'short', timeZone: TZ });
+const ymdFmt = new Intl.DateTimeFormat('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit', timeZone: TZ });
 
 function dayDiff(date) {
-  const d = new Date(date); d.setHours(0, 0, 0, 0);
-  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const d = Date.parse(ymdFmt.format(new Date(date)));
+  const today = Date.parse(ymdFmt.format(new Date()));
   return Math.round((d - today) / 86400000);
 }
 
@@ -287,10 +290,10 @@ function dayLabel(date) {
 function whenShort(date) {
   const diff = dayDiff(date);
   const t = timeFmt.format(new Date(date));
-  if (diff === 0) return `сегодня ${t}`;
-  if (diff === 1) return `завтра ${t}`;
-  if (diff === -1) return `вчера ${t}`;
-  return `${shortDayFmt.format(new Date(date))} ${t}`;
+  if (diff === 0) return `сегодня ${t} МСК`;
+  if (diff === 1) return `завтра ${t} МСК`;
+  if (diff === -1) return `вчера ${t} МСК`;
+  return `${shortDayFmt.format(new Date(date))} ${t} МСК`;
 }
 
 function untilText(ms) {
@@ -335,7 +338,7 @@ function renderMatches() {
     if (!groups.length || groups[groups.length - 1].label !== label) groups.push({ label, items: [] });
     groups[groups.length - 1].items.push(m);
   }
-  $('match-list').innerHTML = groups.map((g) => `
+  $('match-list').innerHTML = `<p class="tz-note">${icon('i-clock')}Время матчей московское (МСК)</p>` + groups.map((g) => `
     <section class="day">
       <h3 class="day-head"><span>${esc(g.label)}</span><span class="day-count num">${g.items.length}</span></h3>
       <div class="glass list-card">${g.items.map(matchRow).join('')}</div>
@@ -348,7 +351,7 @@ function centerCell(m) {
     return `<span class="mid"><span class="mid-main num live">${sc}</span><span class="mid-sub live-sub"><i class="dot"></i>идёт</span></span>`;
   }
   if (m.status === 'FINISHED' && m.score) {
-    return `<span class="mid"><span class="mid-main num">${m.score.home}:${m.score.away}</span><span class="mid-sub">финал</span></span>`;
+    return `<span class="mid"><span class="mid-main num">${m.score.home}:${m.score.away}</span><span class="mid-sub">матч окончен</span></span>`;
   }
   return `<span class="mid"><span class="mid-main num time">${timeFmt.format(new Date(m.utcDate))}</span><span class="mid-sub">${esc(league(m))}</span></span>`;
 }
@@ -383,7 +386,7 @@ function renderHero(list) {
       <div class="hero-meta"><span class="league-tag">${esc(league(next))}</span><span class="badge">${icon('i-lock')}<span class="num">${untilText(left)}</span></span></div>
       <div class="versus">
         <span class="team">${crest(next.home, 'crest-lg')}<span>${esc(next.home.short)}</span></span>
-        <span class="hero-time"><span class="num">${timeFmt.format(new Date(next.utcDate))}</span><span class="muted small">${esc(dayLabel(next.utcDate).toLowerCase())}</span></span>
+        <span class="hero-time"><span class="num">${timeFmt.format(new Date(next.utcDate))}</span><span class="muted small">${esc(dayLabel(next.utcDate).toLowerCase())} · МСК</span></span>
         <span class="team">${crest(next.away, 'crest-lg')}<span>${esc(next.away.short)}</span></span>
       </div>
       <button type="button" class="btn btn-primary" data-match="${next.id}">${p ? `Мой прогноз <span class="num">${p.home}:${p.away}</span>` : 'Вангануть счёт'}</button>
@@ -454,7 +457,7 @@ function renderResultSheet(m) {
   if (m.score) center = `<span class="final num">${m.score.home}:${m.score.away}</span>`;
   else center = `<span class="final final-time num">${timeFmt.format(new Date(m.utcDate))}</span>`;
   const status = LIVE.includes(m.status) ? '<span class="status live-sub"><i class="dot"></i>Идёт матч</span>'
-    : m.status === 'FINISHED' ? '<span class="status">Финал · основное время</span>'
+    : m.status === 'FINISHED' ? '<span class="status">Матч окончен · счёт основного времени</span>'
       : m.status === 'POSTPONED' ? '<span class="status">Матч перенесён</span>'
         : '<span class="status">Приём прогнозов закрыт</span>';
   let mine;
