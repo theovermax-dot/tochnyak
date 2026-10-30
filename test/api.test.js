@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import worker, { weekStartIso } from '../src/index.js';
+import worker, { weekStartIso, inviteCaption } from '../src/index.js';
 import { resetSchemaFlag } from '../src/db.js';
 import { upsertMatches, settleFinished } from '../src/footballData.js';
 import { TestD1, signInitData } from './helpers.js';
@@ -180,4 +180,34 @@ test('мои прогнозы и эмблемы клубов', async () => {
   assert.deepEqual(r.data.items[0].prediction, { home: 1, away: 0, points: null });
   const bad = await worker.fetch(new Request('https://tochnyak.test/crest/a%2Fb.png'), env);
   assert.equal(bad.status, 404);
+});
+
+test('приглашение: подпись, готовое сообщение и страница с превью', async () => {
+  assert.match(inviteCaption('<Макс>'), /Вызов от &lt;Макс&gt;/);
+  const env = makeEnv();
+  const r0 = await call(env, '/api/auth', { user: max, method: 'POST', body: { accept: true } });
+  const code = r0.data.profile.friendCode;
+
+  const realFetch = globalThis.fetch;
+  let sent;
+  globalThis.fetch = async (u, opts) => {
+    sent = { url: String(u), body: JSON.parse(opts.body) };
+    return new Response(JSON.stringify({ ok: true, result: { id: 'prep1', expiration_date: 0 } }));
+  };
+  try {
+    const r = await call(env, '/api/invite', { user: max, method: 'POST' });
+    assert.equal(r.data.id, 'prep1');
+    assert.match(sent.url, /savePreparedInlineMessage$/);
+    assert.equal(sent.body.user_id, 1);
+    assert.equal(sent.body.result.type, 'photo');
+    assert.equal(sent.body.result.photo_url, 'https://tochnyak.test/invite.jpg');
+    assert.equal(sent.body.result.reply_markup.inline_keyboard[0][0].url, `https://t.me/tochnyak_bot?start=f_${code}`);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+
+  const page = await worker.fetch(new Request(`https://tochnyak.test/i/${code}`), env);
+  const html = await page.text();
+  assert.match(html, /og:image" content="https:\/\/tochnyak.test\/invite.jpg/);
+  assert.match(html, new RegExp(`start=f_${code}`));
 });

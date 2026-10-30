@@ -36,6 +36,22 @@ function inviteLink(env, code) {
   return `https://t.me/${botUsername(env)}?start=f_${code}`;
 }
 
+const escHtml = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+// Текст приглашения: приходит другу под картинкой вместе с кнопкой.
+export function inviteCaption(name) {
+  const who = escHtml(String(name || '').trim().slice(0, 32) || 'друга');
+  return [
+    `<b>Вызов от ${who} 🎯</b>`,
+    '',
+    'Го угадывать счёт матчей: АПЛ, Ла Лига, Лига чемпионов и ещё четыре лиги.',
+    '',
+    'Угадал точный счёт — <b>+10 ауры</b>. В конце недели смотрим, кто из нас точнее.',
+    '',
+    'Бесплатно и без денег. Жми 👇'
+  ].join('\n');
+}
+
 const crestUrl = (file) => (file ? `/crest/${file}` : null);
 
 function matchOut(m, env, now) {
@@ -190,6 +206,7 @@ async function handleApi(request, env, url, now) {
       period,
       code,
       link: code ? inviteLink(env, code) : null,
+      shareLink: code ? `${url.origin}/i/${code}` : null,
       rows: results.map((r, i) => ({
         rank: i + 1,
         name: r.first_name || 'Игрок',
@@ -198,6 +215,31 @@ async function handleApi(request, env, url, now) {
         code: r.id === tgUser.id ? null : r.friend_code
       }))
     });
+  }
+
+  // Готовое сообщение-приглашение с картинкой: Telegram покажет выбор чата и отправит его от имени игрока.
+  if (path === '/api/invite' && method === 'POST') {
+    const code = await ensureFriendCode(db, tgUser.id);
+    if (!code) return error(500, 'no_code', 'Не получилось создать приглашение');
+    const res = await botApi(env.BOT_TOKEN, 'savePreparedInlineMessage', {
+      user_id: tgUser.id,
+      result: {
+        type: 'photo',
+        id: `inv-${code}`,
+        photo_url: `${url.origin}/invite.jpg`,
+        thumbnail_url: `${url.origin}/invite-thumb.jpg`,
+        photo_width: 941,
+        photo_height: 1672,
+        caption: inviteCaption(tgUser.firstName),
+        parse_mode: 'HTML',
+        reply_markup: { inline_keyboard: [[{ text: 'Принять вызов', url: inviteLink(env, code) }]] }
+      },
+      allow_user_chats: true,
+      allow_group_chats: true,
+      allow_channel_chats: true
+    });
+    if (!res.ok) return error(502, 'prepare_failed', 'Telegram не принял приглашение');
+    return json({ id: res.result.id, link: `${url.origin}/i/${code}` });
   }
 
   if (path === '/api/friends' && method === 'POST') {
@@ -310,6 +352,29 @@ async function handleBot(request, env, url) {
   return new Response('ok');
 }
 
+// Страница-ссылка приглашения: в Telegram разворачивается в большую картинку, а при открытии ведёт в бота.
+function handleInvitePage(env, url) {
+  const m = /^\/i\/([a-z0-9]{8})$/.exec(url.pathname);
+  const target = m ? inviteLink(env, m[1]) : `https://t.me/${botUsername(env)}`;
+  const t = escHtml(target);
+  const img = `${url.origin}/invite.jpg`;
+  const html = `<!doctype html><html lang="ru"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Точняк: вызов от друга</title>
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Точняк">
+<meta property="og:title" content="Тебе бросили вызов в Точняке 🎯">
+<meta property="og:description" content="Угадывай счёт матчей топ-лиг и обгоняй друзей. Бесплатно и без денег.">
+<meta property="og:image" content="${img}">
+<meta property="og:image:width" content="941">
+<meta property="og:image:height" content="1672">
+<meta name="twitter:card" content="summary_large_image">
+<meta http-equiv="refresh" content="0;url=${t}">
+<style>body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#02060E;color:#F5F2F4;font:600 16px system-ui,sans-serif}a{color:#FF2E63}</style>
+</head><body><a href="${t}">Открыть Точняк в Telegram</a></body></html>`;
+  return new Response(html, { headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'public, max-age=300' } });
+}
+
 // Эмблемы клубов: берём у football-data.org и кэшируем на неделю.
 const CREST_TYPES = { png: 'image/png', svg: 'image/svg+xml', gif: 'image/gif' };
 async function handleCrest(url) {
@@ -366,6 +431,7 @@ export default {
       }
       if (url.pathname.startsWith('/api/')) return await handleApi(request, env, url, now);
       if (url.pathname.startsWith('/crest/')) return await handleCrest(url);
+      if (url.pathname.startsWith('/i/')) return handleInvitePage(env, url);
       if (url.pathname === '/bot/webhook' && request.method === 'POST') return await handleBot(request, env, url);
       if (url.pathname === '/setup') return await handleSetup(env, url, now);
       if (url.pathname === '/health') {

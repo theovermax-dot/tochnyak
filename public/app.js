@@ -565,7 +565,7 @@ async function loadFriends() {
   $('friends-list').innerHTML = '<div class="glass empty"><span class="spinner" aria-hidden="true"></span></div>';
   try {
     const data = await api(`/api/friends?period=${state.fperiod}`);
-    state.friendLink = data.link;
+    state.friendLink = data.shareLink || data.link;
     if (data.rows.length <= 1) {
       $('friends-list').innerHTML = `<div class="glass empty friends-empty">
         <svg class="ic ic-xl" aria-hidden="true"><use href="#i-users"/></svg>
@@ -588,20 +588,35 @@ async function loadFriends() {
 async function friendLink() {
   if (!state.friendLink) {
     const data = await api('/api/friends');
-    state.friendLink = data.link;
+    state.friendLink = data.shareLink || data.link;
   }
   return state.friendLink;
 }
 
+const INVITE_TEXT = 'Бросаю тебе вызов в Точняке 🎯 Угадываем счёт матчей, в конце недели смотрим, кто точнее';
+
+// Приглашение с картинкой и кнопкой. Если Telegram старый, отправляем ссылку с превью.
 $('invite-btn').addEventListener('click', async () => {
+  const btn = $('invite-btn');
+  btn.disabled = true;
+  haptic('light');
   try {
+    if (tg && tg.shareMessage && tg.isVersionAtLeast && tg.isVersionAtLeast('8.0')) {
+      try {
+        const prepared = await api('/api/invite', { method: 'POST' });
+        tg.shareMessage(prepared.id, (sent) => { if (sent) { haptic('success'); toast('Вызов отправлен'); } });
+        return;
+      } catch { /* ниже запасной вариант */ }
+    }
     const link = await friendLink();
-    const text = 'Го угадывать счёт матчей в Точняке. Посмотрим, кто точнее';
-    const share = `https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent(text)}`;
-    haptic('light');
+    const share = `https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent(INVITE_TEXT)}`;
     if (tg && tg.openTelegramLink) tg.openTelegramLink(share);
     else window.open(share, '_blank');
-  } catch (err) { toast(err.message); }
+  } catch (err) {
+    toast(err.message);
+  } finally {
+    btn.disabled = false;
+  }
 });
 
 $('copy-btn').addEventListener('click', async () => {
