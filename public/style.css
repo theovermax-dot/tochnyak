@@ -705,3 +705,10 @@ button, a, [role="button"] { touch-action: manipulation; }
 .prow-out.on { background: rgba(197, 3, 55, 0.12); }
 #bn-list { padding-bottom: 76px; }
 #bn-count { font-family: 'Manrope', sans-serif; font-size: 13px; }
+
+/* Главная проще */
+.hero-q { justify-content: center; text-align: center; font-size: 17px; margin: 0 0 -2px; }
+.hero-exact { align-self: center; margin: -2px 0 -4px; padding: 6px 10px; }
+.hero-progress { flex-direction: row; align-items: center; gap: 10px; }
+.hero-progress i { flex: 1; }
+.hero-progress span { font-size: 12px; font-weight: 800; color: var(--faint); }

@@ -491,9 +491,9 @@ function renderMatches() {
     if (!groups.length || groups[groups.length - 1].label !== label) groups.push({ label, items: [] });
     groups[groups.length - 1].items.push(m);
   }
-  $('match-list').innerHTML = `<p class="tz-note">${icon('i-clock')}Время матчей московское (МСК)</p>` + groups.map((g) => `
+  $('match-list').innerHTML = groups.map((g) => `
     <section class="day">
-      <h3 class="day-head"><span>${esc(g.label)}</span><span class="day-count num">${g.items.length}</span></h3>
+      <h3 class="day-head"><span>${esc(g.label)}</span><span class="day-count">время МСК</span></h3>
       <div class="glass list-card">${g.items.map(matchRow).join('')}</div>
     </section>`).join('');
 }
@@ -504,7 +504,6 @@ const LEAGUE_SHORT = { CL: 'ЛЧ', PL: 'АПЛ', PD: 'Ла Лига', SA: 'Се�
 // Награда за точный счёт: 10 за счёт + по 1 за «обе забьют» и тотал, которые при точном счёте угаданы всегда.
 // Должно совпадать с src/scoring.js. Редкий исход может дать ещё больше.
 const PRIZE = { aura: 12, coins: 5 };
-const prizeRange = () => `<span class="prize-a num">+2–12${icon('i-target')}</span>`;
 const prizeInline = () => `<span class="prize-a num">+${PRIZE.aura}${icon('i-target')}</span><span class="prize-c num">+${PRIZE.coins}<span class="coin" aria-hidden="true"></span></span>`;
 
 function timeCell(m) {
@@ -527,7 +526,7 @@ function matchTag(m) {
   }
   if (m.open) {
     if (p) return `<span class="tag tag-pred num">${predText(p)}</span>`;
-    return `<span class="mr-cta"><span class="tag tag-open">Прогноз</span><span class="mr-prize">${prizeRange()}</span></span>`;
+    return '<span class="tag tag-open">Прогноз</span>';
   }
   if (m.status === 'POSTPONED') return '<span class="tag tag-none">—</span>';
   return p ? `<span class="tag tag-wait num">${predText(p)}</span>` : `<span class="tag tag-none">${icon('i-lock')}</span>`;
@@ -546,8 +545,6 @@ function matchRow(m) {
 // Карточка показывает ближайший матч без прогноза. Нажал П1 / Х / П2 — прогноз сохранён, и сразу следующий матч.
 
 let heroTimer = 0;
-const crowdTotal = (c) => (c ? c.home + c.draw + c.away : 0);
-const crowdPct = (c, k) => { const t = crowdTotal(c); return t ? Math.round((c[k] * 100) / t) : 0; };
 
 function countdownText(ms) {
   if (ms <= 0) return 'приём закрыт';
@@ -565,9 +562,8 @@ function renderHero(list) {
   const queue = open.filter((m) => !m.prediction);
   const today = list.filter((m) => dayDiff(m.utcDate) === 0 && !ENDED.includes(m.status));
   const todayDone = today.filter((m) => m.prediction).length;
-  const progress = today.length ? `<div class="hero-progress">
-      <span>Сегодня ${todayDone ? `<b>${todayDone} из ${today.length}</b> с прогнозом` : `<b>${today.length}</b> ${plural(today.length, ['матч', 'матча', 'матчей'])}`}</span>
-      <i style="--p:${Math.round((todayDone * 100) / today.length)}%"></i>
+  const progress = today.length ? `<div class="hero-progress" aria-label="Прогнозов на сегодня: ${todayDone} из ${today.length}">
+      <i style="--p:${Math.round((todayDone * 100) / today.length)}%"></i><span class="num">${todayDone}/${today.length}</span>
     </div>` : '';
   const next = queue[0];
   if (!next) {
@@ -581,25 +577,20 @@ function renderHero(list) {
       </div>${progress}` : '';
     return;
   }
-  const c = next.crowd;
-  const total = crowdTotal(c);
   const opt = (k, top, name) => `<button type="button" class="qp" data-qp="${k}" data-id="${next.id}">
-      <b class="num">${top}</b><span>${esc(name)}</span>${total ? `<em class="num">${crowdPct(c, k)}%</em>` : ''}</button>`;
+      <b class="num">${top}</b><span>${esc(name)}</span></button>`;
   $('hero').innerHTML = `
     <div class="glass hero hero-quick" data-hero="${next.id}">
       <div class="hero-meta"><span class="league-tag">${esc(league(next))}</span>
         <span class="badge">${icon('i-lock')}<span class="num" id="hero-count">${countdownText(Date.parse(next.lockAt) - Date.now())}</span></span></div>
       <div class="versus">
         <span class="team">${crest(next.home, 'crest-lg')}<span>${esc(next.home.short)}</span></span>
-        <span class="hero-time"><span class="num">${timeFmt.format(new Date(next.utcDate))}</span><span class="muted small">${esc(dayLabel(next.utcDate).toLowerCase())} · МСК</span></span>
+        <span class="hero-time"><span class="num">${timeFmt.format(new Date(next.utcDate))}</span><span class="muted small">${esc(dayLabel(next.utcDate).toLowerCase())}</span></span>
         <span class="team">${crest(next.away, 'crest-lg')}<span>${esc(next.away.short)}</span></span>
       </div>
-      <p class="hero-q">Кто победит? <span>+2${icon('i-target')} за верный исход</span></p>
+      <p class="hero-q">Кто победит?</p>
       <div class="qp-grid">${opt('home', 'П1', next.home.short)}${opt('draw', 'Х', 'Ничья')}${opt('away', 'П2', next.away.short)}</div>
-      <div class="hero-foot">
-        <span class="muted small">${total ? `Уже ${total} ${plural(total, ['прогноз', 'прогноза', 'прогнозов'])}` : 'Будь первым'}${queue.length > 1 ? ` · ещё ${queue.length - 1} ${plural(queue.length - 1, ['ждёт', 'ждут', 'ждут'])}` : ''}</span>
-        <button type="button" class="link hero-exact" data-match="${next.id}" data-mode="score">Точный счёт, до +12 →</button>
-      </div>
+      <button type="button" class="link hero-exact" data-match="${next.id}" data-mode="score">Точный счёт →</button>
     </div>${progress}`;
   heroTimer = setInterval(() => {
     const el = $('hero-count');
@@ -617,7 +608,6 @@ async function quickPick(id, key, btn) {
   try {
     const res = await api('/api/predictions', { method: 'POST', body: { matchId: id, kind: 'outcome', pick: key } });
     m.prediction = { home: res.prediction.home, away: res.prediction.away, kind: 'outcome', points: null };
-    if (m.crowd) m.crowd[key] += 1;
     haptic('success');
     toast(`${OUT_LABEL[key]} залочено`);
     const card = document.querySelector('.hero-quick');
@@ -671,9 +661,8 @@ function renderSheet() {
       <button type="button" role="tab" data-pmode="score" aria-selected="${s.mode === 'score'}">Точный счёт</button>
     </div>`;
   if (s.mode === 'outcome') {
-    const total = crowdTotal(m.crowd);
     const opt = (key, top, name) => `<button type="button" class="out-btn" data-out="${key}" aria-pressed="${s.pick === key}">
-      <b class="num">${top}</b><span>${esc(name)}</span>${total ? `<em class="num">${crowdPct(m.crowd, key)}% игроков</em>` : ''}</button>`;
+      <b class="num">${top}</b><span>${esc(name)}</span></button>`;
     $('sheet-body').innerHTML = `
       ${teamsHead(m, '<span class="vs-dash" aria-hidden="true">vs</span>')}
       ${modes}
