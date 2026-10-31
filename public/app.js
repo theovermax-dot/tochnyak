@@ -316,7 +316,12 @@ function renderTop() {
   $('top-aura').textContent = p.aura.toLocaleString('ru-RU');
   $('top-coins').textContent = (p.coins || 0).toLocaleString('ru-RU');
   $('shop-coins').textContent = (p.coins || 0).toLocaleString('ru-RU');
-  $('top-avatar').outerHTML = ava(p.firstName, p.photo, 'avatar-sm').replace('<span class="avatar ', '<span id="top-avatar" class="avatar ');
+  // Аватарку перерисовываем, только если она поменялась, иначе картинка мигает.
+  const key = `${p.firstName}|${p.photo || ''}`;
+  if (state.topAva !== key) {
+    state.topAva = key;
+    $('top-avatar').outerHTML = ava(p.firstName, p.photo, 'avatar-sm').replace('<span class="avatar ', '<span id="top-avatar" class="avatar ');
+  }
   setBadge(p.unread || 0);
 }
 
@@ -452,8 +457,9 @@ async function loadMatches() {
   if (!state.matches.length) $('match-list').innerHTML = '<div class="glass empty"><span class="spinner" aria-hidden="true"></span></div>';
   try {
     const data = await api('/api/matches');
+    const same = state.matches.length && JSON.stringify(state.matches) === JSON.stringify(data.matches);
     state.matches = data.matches;
-    renderMatches();
+    if (!same || !$('match-list').firstChild) renderMatches();
   } catch (err) {
     $('match-list').innerHTML = `<div class="glass empty"><b>Матчи не загрузились</b>${esc(err.message)}${retryBtn('matches')}</div>`;
   }
@@ -755,9 +761,22 @@ function myRow(m) {
 // ---------- Друзья ----------
 
 async function loadFriends() {
-  $('friends-list').innerHTML = '<div class="glass empty"><span class="spinner" aria-hidden="true"></span></div>';
+  const cache = (state.friendsCache = state.friendsCache || {});
+  const period = state.fperiod;
+  if (cache[period]) renderFriends(cache[period]);
+  else $('friends-list').innerHTML = '<div class="glass empty"><span class="spinner" aria-hidden="true"></span></div>';
   try {
-    const data = await api(`/api/friends?period=${state.fperiod}`);
+    const data = await api(`/api/friends?period=${period}`);
+    const same = cache[period] && JSON.stringify(cache[period]) === JSON.stringify(data);
+    cache[period] = data;
+    if (!same && state.fperiod === period) renderFriends(data);
+  } catch (err) {
+    if (!cache[period]) $('friends-list').innerHTML = `<div class="glass empty"><b>Не загрузилось</b>${esc(err.message)}${retryBtn('friends')}</div>`;
+  }
+}
+
+function renderFriends(data) {
+  {
     state.friendLink = data.shareLink || data.link;
     if (data.rows.length <= 1) {
       $('friends-list').innerHTML = `<div class="glass empty friends-empty">
@@ -776,8 +795,6 @@ async function loadFriends() {
       return `<div class="lb-row lb-tap" data-friend-open="${esc(r.code)}" role="button" tabindex="0" aria-label="${esc(r.name)}">${inner}
         <button type="button" class="fight-ic" data-challenge="${esc(r.code)}" data-name="${esc(r.name)}" aria-label="Бой с ${esc(r.name)}">${icon('i-swords')}</button></div>`;
     }).join('')}</div>`;
-  } catch (err) {
-    $('friends-list').innerHTML = `<div class="glass empty"><b>Не загрузилось</b>${esc(err.message)}${retryBtn('friends')}</div>`;
   }
 }
 
@@ -952,9 +969,22 @@ async function removeFriend(code, name) {
 // ---------- Рейтинг ----------
 
 async function loadRating() {
-  $('rating-list').innerHTML = '<div class="glass empty"><span class="spinner" aria-hidden="true"></span></div>';
+  const cache = (state.ratingCache = state.ratingCache || {});
+  const period = state.period;
+  if (cache[period]) renderRating(cache[period]);
+  else $('rating-list').innerHTML = '<div class="glass empty"><span class="spinner" aria-hidden="true"></span></div>';
   try {
-    const data = await api(`/api/leaderboard?period=${state.period}`);
+    const data = await api(`/api/leaderboard?period=${period}`);
+    const same = cache[period] && JSON.stringify(cache[period]) === JSON.stringify(data);
+    cache[period] = data;
+    if (!same && state.period === period) renderRating(data);
+  } catch (err) {
+    if (!cache[period]) $('rating-list').innerHTML = `<div class="glass empty"><b>Рейтинг не загрузился</b>${esc(err.message)}${retryBtn('rating')}</div>`;
+  }
+}
+
+function renderRating(data) {
+  {
     const me = data.me;
     $('rating-me').innerHTML = `<div class="glass strip">
       <span><b class="num">${me.rank || '—'}</b><span>место</span></span>
@@ -971,21 +1001,24 @@ async function loadRating() {
         <span class="lb-name">${r.isMe ? 'Ты' : esc(r.name)}</span>
         <span class="lb-pts num">${r.pts}</span>
       </div>`).join('')}</div>`;
-  } catch (err) {
-    $('rating-list').innerHTML = `<div class="glass empty"><b>Рейтинг не загрузился</b>${esc(err.message)}${retryBtn('rating')}</div>`;
   }
 }
 
 // ---------- Профиль ----------
 
 async function loadProfile() {
+  renderProfile();
   try {
     const me = await api('/api/me');
-    if (me.registered) { state.profile = me.profile; renderTop(); }
+    if (me.registered) { state.profile = me.profile; renderTop(); renderProfile(); }
   } catch { /* покажем то, что уже есть */ }
+}
+
+function renderProfile() {
   const p = state.profile;
+  if (!p) return;
   $('friends-count').textContent = p.friendsCount ? p.friendsCount : '';
-  $('profile-card').innerHTML = `<div class="glass profile-card">
+  const html = `<div class="glass profile-card">
     <div class="hero-dude">
       <span class="dude-glow" aria-hidden="true"></span>
       <div class="spin" data-spin="${esc(p.character || 'tochnyak')}" role="img" aria-label="Твой персонаж: крути пальцем влево и вправо"></div>
@@ -1000,6 +1033,9 @@ async function loadProfile() {
       <span><b class="num">${p.settledPredictions}</b><span>сыграно</span></span>
     </div>
   </div>`;
+  if (html === state.profileHtml && $('profile-card').firstChild) return;
+  state.profileHtml = html;
+  $('profile-card').innerHTML = html;
   mountSpinners();
 }
 
@@ -1089,6 +1125,10 @@ $('delete-btn').addEventListener('click', async () => {
     state.matches = [];
     state.my = [];
     state.battles = [];
+    state.friendsCache = {};
+    state.ratingCache = {};
+    state.profileHtml = null;
+    state.topAva = null;
     $('consent').checked = false;
     $('login-btn').disabled = true;
     $('login-name').textContent = tg && tg.initDataUnsafe && tg.initDataUnsafe.user ? tg.initDataUnsafe.user.first_name : 'Игрок';

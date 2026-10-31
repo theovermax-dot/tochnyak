@@ -7,7 +7,7 @@
   --crimson-hi: #FF2E63;
   --pink-soft: #ffb3c6;
   --green: #7CF0A9;
-  --glass-bg: rgba(255, 255, 255, 0.055);
+  --glass-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.04));
   --glass-line: rgba(255, 255, 255, 0.12);
   --row-line: rgba(255, 255, 255, 0.07);
   /* В полноэкранном режиме Telegram кладёт свои кнопки поверх страницы: отступаем от них. */
@@ -48,8 +48,7 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--crimson-hi); ou
 .glass {
   background: var(--glass-bg);
   border: 1px solid var(--glass-line);
-  -webkit-backdrop-filter: blur(22px) saturate(170%);
-  backdrop-filter: blur(22px) saturate(170%);
+  /* Без живого размытия: на телефоне десятки размытых слоёв тормозят прокрутку. */
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14);
 }
 .num { font-family: 'Unbounded', system-ui, sans-serif; font-variant-numeric: tabular-nums; }
@@ -98,9 +97,7 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--crimson-hi); ou
 .topbar {
   position: sticky; top: 0; z-index: 9; display: flex; align-items: center; justify-content: space-between;
   min-height: 48px; margin: 0 -16px 8px; padding: calc(8px + var(--safe-top)) 16px 10px;
-  background: linear-gradient(180deg, rgba(10, 4, 10, 0.97) 0%, rgba(10, 4, 10, 0.9) 75%, rgba(10, 4, 10, 0) 100%);
-  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
-  -webkit-mask-image: linear-gradient(180deg, #000 82%, transparent); mask-image: linear-gradient(180deg, #000 82%, transparent);
+  background: linear-gradient(180deg, #0a040a 0%, rgba(10, 4, 10, 0.94) 78%, rgba(10, 4, 10, 0) 100%);
 }
 .brand { display: flex; align-items: center; gap: 8px; }
 .wordmark-sm { font-family: 'Unbounded', sans-serif; font-weight: 800; font-size: 17px; letter-spacing: -0.02em; }
@@ -135,8 +132,6 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--crimson-hi); ou
   background:
     radial-gradient(120% 90% at 30% 15%, rgba(255, 255, 255, 0.34) 0%, rgba(255, 255, 255, 0.1) 45%, rgba(255, 255, 255, 0.04) 100%);
   border: 1px solid rgba(255, 255, 255, 0.22);
-  -webkit-backdrop-filter: blur(12px) saturate(160%);
-  backdrop-filter: blur(12px) saturate(160%);
   box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.45), inset 0 -6px 12px rgba(0, 0, 0, 0.28), 0 6px 14px rgba(0, 0, 0, 0.35);
 }
 .crest::after {
@@ -145,7 +140,7 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--crimson-hi); ou
 }
 .crest img {
   position: absolute; inset: 7px; width: calc(100% - 14px); height: calc(100% - 14px); object-fit: contain;
-  filter: drop-shadow(0 0 0.6px rgba(255, 255, 255, 0.7)) drop-shadow(0 2px 3px rgba(0, 0, 0, 0.45));
+  /* без filter: тени на каждой эмблеме дорого обходятся при прокрутке */
 }
 .crest-tla { font-family: 'Unbounded', sans-serif; font-size: 10px; font-weight: 800; color: var(--ink); letter-spacing: -0.02em; }
 .crest-lg { width: 66px; height: 66px; }
@@ -273,13 +268,14 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--crimson-hi); ou
 
 /* Окно матча */
 .sheet { position: fixed; inset: 0; z-index: 20; display: flex; align-items: flex-end; justify-content: center; }
-.sheet-backdrop { position: absolute; inset: 0; background: rgba(2, 6, 14, 0.62); -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); }
+.sheet-backdrop { position: absolute; inset: 0; background: rgba(2, 6, 14, 0.74); animation: fade .2s ease-out; }
+@keyframes fade { from { opacity: 0; } }
 .sheet-panel {
   position: relative; width: min(520px, 100%); max-height: calc(100vh - var(--safe-top) - 24px); overflow-y: auto;
   border-radius: 30px 30px 0 0; border: 1px solid var(--glass-line); border-bottom: none;
   padding: 12px 18px calc(18px + var(--safe-bottom)); display: flex; flex-direction: column; gap: 14px;
-  background: rgba(18, 9, 15, 0.9); -webkit-backdrop-filter: blur(26px); backdrop-filter: blur(26px);
-  animation: rise .28s cubic-bezier(.2, .9, .3, 1);
+  background: #140a11; overscroll-behavior: contain; -webkit-overflow-scrolling: touch;
+  animation: rise .26s cubic-bezier(.2, .9, .3, 1); will-change: transform;
 }
 #sheet-body { display: flex; flex-direction: column; gap: 14px; }
 @keyframes rise { from { transform: translateY(40px); opacity: 0; } to { transform: none; opacity: 1; } }
@@ -341,7 +337,7 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--crimson-hi); ou
   background: radial-gradient(closest-side, rgba(0, 0, 0, 0.6), rgba(0, 0, 0, 0)); }
 .spin-hint { position: absolute; left: 12px; top: 10px; font-size: 12px; font-weight: 800; color: var(--muted); padding: 5px 10px; border-radius: 999px; background: rgba(255, 255, 255, 0.08); }
 .dude-btn { position: absolute; right: 8px; top: 8px; z-index: 2; color: var(--ink); display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 12px; border-radius: 999px;
-  background: rgba(255, 255, 255, 0.1); border: 1px solid var(--glass-line); font-size: 13px; font-weight: 800; -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); }
+  background: rgba(255, 255, 255, 0.1); border: 1px solid var(--glass-line); font-size: 13px; font-weight: 800; }
 .dude-btn .ic { width: 16px; height: 16px; color: var(--crimson-hi); }
 .profile-name { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 20px; }
 .profile-name b { font-family: 'Unbounded', sans-serif; font-weight: 600; font-size: 19px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -642,3 +638,13 @@ input { -webkit-user-select: text; user-select: text; }
   .mr { gap: 10px; padding: 12px; }
   .mr-teams { padding-left: 10px; }
 }
+
+/* Плавность */
+html { -webkit-text-size-adjust: 100%; }
+button, a, [role="button"] { touch-action: manipulation; }
+/* Тапбар — единственное, что оставляем размытым: он один и фиксирован. */
+.tabbar { -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); background: rgba(12, 10, 16, 0.82); transform: translateX(-50%) translateZ(0); }
+/* Длинные списки: браузер не рисует то, что далеко за экраном. */
+.days > .day, #bn-list > .day { content-visibility: auto; contain-intrinsic-size: auto 400px; }
+.view { animation: viewIn .18s ease-out; }
+@keyframes viewIn { from { opacity: 0; transform: translateY(4px); } }
