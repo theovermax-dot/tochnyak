@@ -402,6 +402,16 @@ document.addEventListener('click', (e) => {
   if (mytab) { state.mytab = mytab.dataset.mytab; setSelected('mytab', state.mytab); haptic('select'); renderMy(); return; }
   const pick = t.closest('[data-pick]');
   if (pick) { pickShopCharacter(pick.dataset.pick); return; }
+  const stepEl = t.closest('[data-skin-step]');
+  if (stepEl) {
+    const found = shopSkin(state.shopSkin);
+    if (found) {
+      const list = found.c.skins;
+      const k = (list.findIndex((x) => x.id === found.s.id) + Number(stepEl.dataset.skinStep) + list.length) % list.length;
+      pickShopSkin(list[k].id); haptic('select'); renderShop();
+    }
+    return;
+  }
   const skinEl = t.closest('[data-skin]');
   if (skinEl) { pickShopSkin(skinEl.dataset.skin); haptic('select'); renderShop(); return; }
   const shopChar = t.closest('[data-shop-char]');
@@ -1585,11 +1595,19 @@ function renderShop() {
     // Замок — только если сейчас купить нельзя: нет персонажа или не хватает монет.
     const closed = !k.owned && (k.needsCharacter || shop.coins < k.price);
     const tag = k.selected ? icon('i-check') : closed ? icon('i-lock') : '';
-    return `<button type="button" class="skin-tab ${TIER_CLASS[k.tier]}${k.id === s.id ? ' on' : ''}${closed ? ' closed' : ''}" data-skin="${esc(k.id)}" aria-pressed="${k.id === s.id}" aria-label="${esc(k.name)}${closed ? ', закрыт' : ''}">
+    const foot = k.selected ? 'надет' : k.owned ? 'твой' : `<span class="coin" aria-hidden="true"></span>${k.price}`;
+    return `<button type="button" class="skin-tab ${TIER_CLASS[k.tier]}${k.id === s.id ? ' on' : ''}${closed ? ' closed' : ''}" data-skin="${esc(k.id)}" aria-pressed="${k.id === s.id}" aria-label="Образ ${k.tier}: ${esc(k.name)}${closed ? ', закрыт' : ''}">
       <img src="/chars/${esc(k.id)}/front.webp" alt="" loading="lazy" decoding="async">
       <span class="skin-tier num">${k.tier}</span>${tag ? `<span class="skin-tag">${tag}</span>` : ''}
+      <span class="skin-foot num">${foot}</span>
     </button>`;
   }).join('')}</div>` : '';
+  const many = c.skins.length > 1;
+  const idx = c.skins.findIndex((k) => k.id === s.id);
+  // Подсказка про образы: первые разы заметно мигает, потом спокойно.
+  let fresh = false;
+  try { const n = Number(localStorage.getItem('tochnyak_skins_hint') || 0); fresh = many && n < 3; if (fresh && state.hintShownFor !== c.id) { localStorage.setItem('tochnyak_skins_hint', String(n + 1)); state.hintShownFor = c.id; } } catch { fresh = many; }
+  const skinsHead = many ? `<div class="skins-head${fresh ? ' fresh' : ''}"><b>${c.skins.length} ${plural(c.skins.length, ['образ', 'образа', 'образов'])}</b><span>нажми, чтобы примерить</span><em class="skin-count num">${idx + 1} из ${c.skins.length}</em></div>` : '';
   const priceNote = s.owned ? (s.selected ? 'надет' : 'твой')
     : `<span class="coin" aria-hidden="true"></span><span class="num">${s.price}</span>`;
   $('shop-stage').innerHTML = `<div class="glass shop-stage">
@@ -1600,11 +1618,14 @@ function renderShop() {
     : '<span class="stage-lock stage-open">Можно купить</span>') : ''}
       <span class="spin-hint">${icon('i-rotate')}крути</span>
       <div class="spin" data-spin="${esc(s.id)}" role="img" aria-label="${esc(c.name)}, ${esc(s.name)}: крути пальцем"></div>
+      ${many ? `<button type="button" class="skin-arrow prev" data-skin-step="-1" aria-label="Предыдущий образ">${icon('i-back')}</button>
+      <button type="button" class="skin-arrow next" data-skin-step="1" aria-label="Следующий образ">${icon('i-back')}</button>` : ''}
     </div>
     <div class="shop-stage-info">
       <span class="shop-stage-name"><b>${esc(c.name)}</b><span>${esc(s.name)}</span></span>
       <span class="shop-stage-side"><span class="rarity ${TIER_CLASS[s.tier]}">${esc(s.rarity || '')}</span><span class="shop-price">${priceNote}</span></span>
     </div>
+    ${skinsHead}
     ${skinsRow}
     ${shopButton(c, s, shop.coins)}
   </div>`;
@@ -1619,6 +1640,7 @@ function renderShop() {
     return `<button type="button" class="glass shop-card${ch.id === c.id ? ' picked' : ''}${!ch.owned && shop.coins < ch.price ? ' closed' : ''}" data-pick="${esc(ch.id)}" aria-pressed="${ch.id === c.id}">
       <span class="shop-card-art"><img src="/chars/${esc(cover.id)}/front.webp" alt="" loading="lazy" decoding="async"></span>
       <span class="shop-card-name">${esc(ch.name)}</span>
+      ${ch.skins.length > 1 ? `<span class="shop-card-skins" aria-label="${ch.skins.length} образа">${ch.skins.map((k) => `<img src="/chars/${esc(k.id)}/front.webp" alt="" loading="lazy" decoding="async">`).join('')}<em>${ch.skins.length} ${plural(ch.skins.length, ['образ', 'образа', 'образов'])}</em></span>` : '<span class="shop-card-skins"><em>1 образ</em></span>'}
       <span class="shop-card-price">${price}</span>
     </button>`;
   }).join('');
