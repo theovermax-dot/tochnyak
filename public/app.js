@@ -1798,8 +1798,8 @@ function battleItemOutcome(it, m, b, e, head, finished) {
   return `<div class="brow">
     <div class="brow-head"><span class="league-tag">${esc(league(m))}</span>${head}</div>
     <div class="bo-teams">${crest(m.home)}<b>${esc(m.home.short)}</b><span class="bo-dash">—</span><b>${esc(m.away.short)}</b>${crest(m.away)}</div>
-    <div class="bo-row"><span class="bo-who">Ты</span><span class="bo-val">${mine}${pts(it.mine)}</span></div>
-    <div class="bo-row"><span class="bo-who">${esc(b.opponent.name)}</span><span class="bo-val">${theirs}${t && !t.hidden ? pts(t) : ''}</span></div>
+    <div class="bo-row"><span class="bo-who">${ava(state.profile ? state.profile.firstName : 'Ты', state.profile && state.profile.photo, 'avatar-xs')}<b>Ты</b></span><span class="bo-val">${mine}${pts(it.mine)}</span></div>
+    <div class="bo-row"><span class="bo-who">${ava(b.opponent.name, b.opponent.photo, 'avatar-xs')}<b>${esc(b.opponent.name)}</b></span><span class="bo-val">${theirs}${t && !t.hidden ? pts(t) : ''}</span></div>
   </div>`;
 }
 

@@ -615,7 +615,9 @@ input { -webkit-user-select: text; user-select: text; }
 .bo-teams b { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .bo-dash { color: var(--faint); }
 .bo-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 36px; }
-.bo-who { font-size: 13px; font-weight: 700; color: var(--muted); min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bo-who { display: inline-flex; align-items: center; gap: 9px; min-width: 0; }
+.bo-who b { font-size: 14px; font-weight: 700; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.bo-who .avatar-xs { width: 26px; height: 26px; font-size: 10px; flex: none; box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.1); }
 .bo-val { display: inline-flex; align-items: center; gap: 8px; flex: none; }
 .opill { min-width: 44px; height: 30px; padding: 0 10px; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; background: rgba(255, 255, 255, 0.08); font-family: 'Unbounded', sans-serif; font-size: 13px; font-weight: 800; }
 .opill.hit { background: rgba(124, 240, 169, 0.16); color: var(--green); }
