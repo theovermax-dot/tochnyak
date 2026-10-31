@@ -6,6 +6,7 @@ import { validateInitData, botApi } from './telegram.js';
 import { syncAndSettle } from './footballData.js';
 import { COINS } from './scoring.js';
 import { CHARACTERS, DEFAULT_CHARACTER, characterById } from './characters.js';
+import { BATTLE_ID, createBattle, savePicks, closeBattle, listBattles, getBattle, deleteUserBattles } from './battles.js';
 
 const MAX_GOALS = 15;
 const MAX_FRIENDS = 300;
@@ -145,6 +146,21 @@ async function addFriend(db, userId, code, now) {
   return { added, name: friend.first_name || 'Игрок' };
 }
 
+// Фоновая задача: Worker не ждёт её, но и не обрывает.
+function later(ctx, task) {
+  if (!ctx || !ctx.waitUntil) return;
+  ctx.waitUntil(Promise.resolve().then(task).catch(() => {}));
+}
+
+// Сообщение игроку от бота с кнопкой в мини-апп. Если он не запускал бота, Telegram просто откажет.
+function notify(env, chatId, text, button, webUrl) {
+  if (!env.BOT_TOKEN) return null;
+  return botApi(env.BOT_TOKEN, 'sendMessage', {
+    chat_id: chatId, text, parse_mode: 'HTML',
+    reply_markup: { inline_keyboard: [[{ text: button, web_app: { url: webUrl } }]] }
+  });
+}
+
 async function currentTelegramUser(request, env) {
   const initData = request.headers.get('x-telegram-init-data');
   return validateInitData(initData, env.BOT_TOKEN);
@@ -177,7 +193,7 @@ async function loadProfile(db, userId, now) {
   };
 }
 
-async function handleApi(request, env, url, now) {
+async function handleApi(request, env, url, now, ctx) {
   const db = env.DB;
   const tgUser = await currentTelegramUser(request, env);
   if (!tgUser) return error(401, 'unauthorized', 'Откройте приложение через Telegram');
@@ -210,6 +226,7 @@ async function handleApi(request, env, url, now) {
   if (!exists) return error(403, 'not_registered', 'Сначала войдите в приложение');
 
   if (path === '/api/me' && method === 'DELETE') {
+    await deleteUserBattles(db, tgUser.id);
     await db.batch([
       db.prepare('DELETE FROM predictions WHERE user_id = ?1').bind(tgUser.id),
       db.prepare('DELETE FROM friends WHERE user_id = ?1 OR friend_id = ?1').bind(tgUser.id),
@@ -273,6 +290,50 @@ async function handleApi(request, env, url, now) {
     if (!owned.has(ch.id)) return error(403, 'not_owned', 'Сначала купи этого персонажа');
     await db.prepare('UPDATE users SET character = ?1 WHERE id = ?2').bind(ch.id, tgUser.id).run();
     return json(await shopState(db, tgUser.id));
+  }
+
+  // Бои с друзьями.
+  if (path === '/api/battles' && method === 'GET') {
+    return json({ battles: await listBattles(db, { userId: tgUser.id, now, lockMs: lockMs(env) }) });
+  }
+
+  if (path === '/api/battles' && method === 'POST') {
+    const body = await request.json().catch(() => ({}));
+    const res = await createBattle(db, { userId: tgUser.id, friendCode: body.friend, picks: body.picks, now, lockMs: lockMs(env) });
+    if (res.error) return error(...res.error);
+    later(ctx, () => notify(env, res.opponentId,
+      `⚔️ <b>${escHtml(tgUser.firstName || 'Друг')} вызывает тебя на бой</b>\n\nМатчей в бою: ${body.picks.length}. Ставь свои счета, пока матчи не начались. Победит тот, кто окажется точнее.`,
+      'Принять бой', `${url.origin}/#battle-${res.id}`));
+    return json({ id: res.id });
+  }
+
+  const battlePath = /^\/api\/battles\/([a-z0-9]{10})(?:\/(picks|close))?$/.exec(path);
+  if (battlePath && BATTLE_ID.test(battlePath[1])) {
+    const battleId = battlePath[1];
+    const action = battlePath[2];
+    if (!action && method === 'GET') {
+      const res = await getBattle(db, { battleId, userId: tgUser.id, now, lockMs: lockMs(env) });
+      if (!res) return error(404, 'no_battle', 'Бой не найден');
+      const nowMs = now;
+      return json({ battle: res.battle, matches: res.matches.map((m) => matchOut(m, env, nowMs)) });
+    }
+    if (action === 'picks' && method === 'POST') {
+      const body = await request.json().catch(() => ({}));
+      const res = await savePicks(db, { battleId, userId: tgUser.id, picks: body.picks, now, lockMs: lockMs(env) });
+      if (res.error) return error(...res.error);
+      if (res.accepted) {
+        later(ctx, () => notify(env, res.creatorId,
+          `🔥 <b>${escHtml(tgUser.firstName || 'Друг')} принял бой</b>\n\nПрогнозы закрыты до начала матчей. Итог узнаешь после финального свистка.`,
+          'Открыть бой', `${url.origin}/#battle-${battleId}`));
+      }
+      const res2 = await getBattle(db, { battleId, userId: tgUser.id, now, lockMs: lockMs(env) });
+      return json({ saved: res.saved, skipped: res.skipped, battle: res2.battle, matches: res2.matches.map((m) => matchOut(m, env, now)) });
+    }
+    if (action === 'close' && method === 'POST') {
+      const res = await closeBattle(db, { battleId, userId: tgUser.id });
+      if (res.error) return error(...res.error);
+      return json(res);
+    }
   }
 
   if (path === '/api/friends' && method === 'GET') {
@@ -420,7 +481,7 @@ async function handleBot(request, env, url) {
     const keyboard = {
       inline_keyboard: [
         [{ text: ref ? '⚔️ Принять вызов' : '⚽ Играть', web_app: { url: openUrl } }],
-        [{ text: 'Правила', url: `${appUrl}/terms.html` }, { text: 'Конфиденциальность', url: `${appUrl}/privacy.html` }]
+        [{ text: 'Правила и конфиденциальность', web_app: { url: `${appUrl}/#legal` } }]
       ]
     };
     const caption = welcomeCaption(inviter);
@@ -432,7 +493,34 @@ async function handleBot(request, env, url) {
       await botApi(env.BOT_TOKEN, 'sendMessage', { chat_id: msg.chat.id, text: caption, parse_mode: 'HTML', reply_markup: keyboard });
     }
   } else if (text.startsWith('/privacy')) {
-    await botApi(env.BOT_TOKEN, 'sendMessage', { chat_id: msg.chat.id, text: `Политика конфиденциальности: ${appUrl}/privacy.html` });
+    await botApi(env.BOT_TOKEN, 'sendMessage', {
+      chat_id: msg.chat.id,
+      text: 'Правила игры и политика конфиденциальности открываются прямо в приложении.',
+      reply_markup: { inline_keyboard: [[{ text: 'Открыть', web_app: { url: `${appUrl}/#privacy` } }]] }
+    });
+  } else if (text.startsWith('/admin')) {
+    // Разовая привязка: разработчик пишет боту «/admin <WEBHOOK_SECRET>», и сюда начнут приходить обращения игроков.
+    const key = text.split(/\s+/)[1] || '';
+    if (env.WEBHOOK_SECRET && key === env.WEBHOOK_SECRET) {
+      await ensureSchema(env.DB);
+      await env.DB.prepare("INSERT INTO meta (key, value) VALUES ('admin_chat', ?1) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
+        .bind(JSON.stringify(msg.chat.id)).run();
+      await botApi(env.BOT_TOKEN, 'sendMessage', { chat_id: msg.chat.id, text: 'Готово: обращения игроков будут приходить сюда.' });
+    }
+  } else if (text.startsWith('/help')) {
+    await botApi(env.BOT_TOKEN, 'sendMessage', { chat_id: msg.chat.id, text: 'Напиши вопрос или идею одним сообщением прямо сюда, ответим в этом чате.' });
+  } else if (!text.startsWith('/')) {
+    // Обычное сообщение боту — обращение в поддержку. Пересылаем разработчику, не раскрывая его аккаунт.
+    await ensureSchema(env.DB);
+    const row = await env.DB.prepare("SELECT value FROM meta WHERE key = 'admin_chat'").first();
+    const admin = row ? JSON.parse(row.value) : null;
+    if (admin && admin !== msg.chat.id) {
+      await botApi(env.BOT_TOKEN, 'forwardMessage', { chat_id: admin, from_chat_id: msg.chat.id, message_id: msg.message_id });
+    }
+    await botApi(env.BOT_TOKEN, 'sendMessage', {
+      chat_id: msg.chat.id,
+      text: admin ? 'Сообщение получили, ответим здесь же в течение пары дней.' : 'Напиши вопрос одним сообщением, мы ответим здесь же.'
+    });
   } else if (text.startsWith('/delete')) {
     await botApi(env.BOT_TOKEN, 'sendMessage', {
       chat_id: msg.chat.id,
@@ -505,7 +593,8 @@ async function handleSetup(env, url, now) {
     commands: [
       { command: 'start', description: 'Открыть Точняк' },
       { command: 'privacy', description: 'Политика конфиденциальности' },
-      { command: 'delete', description: 'Как удалить аккаунт и данные' }
+      { command: 'delete', description: 'Как удалить аккаунт и данные' },
+      { command: 'help', description: 'Написать в поддержку' }
     ]
   });
   results.sync = await syncAndSettle(env, now);
@@ -514,16 +603,19 @@ async function handleSetup(env, url, now) {
 }
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const now = Date.now();
     try {
       if (url.pathname.startsWith('/api/') || url.pathname === '/bot/webhook' || url.pathname === '/setup' || url.pathname === '/health') {
         await ensureSchema(env.DB);
       }
-      if (url.pathname.startsWith('/api/')) return await handleApi(request, env, url, now);
+      if (url.pathname.startsWith('/api/')) return await handleApi(request, env, url, now, ctx);
       if (url.pathname.startsWith('/crest/')) return await handleCrest(url);
       if (url.pathname.startsWith('/i/')) return handleInvitePage(env, url);
+      // Правила и политика теперь внутри приложения. Старые ссылки ведут туда же.
+      if (url.pathname === '/privacy.html' || url.pathname === '/privacy') return Response.redirect(`${url.origin}/#privacy`, 302);
+      if (url.pathname === '/terms.html' || url.pathname === '/terms') return Response.redirect(`${url.origin}/#terms`, 302);
       if (url.pathname === '/bot/webhook' && request.method === 'POST') return await handleBot(request, env, url);
       if (url.pathname === '/setup') return await handleSetup(env, url, now);
       if (url.pathname === '/health') {

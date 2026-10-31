@@ -61,6 +61,31 @@ const SCHEMA = [
     friend_id INTEGER NOT NULL,
     created_at TEXT NOT NULL,
     PRIMARY KEY (user_id, friend_id)
+  )`,
+  // Бои с друзьями: на интерес, без ауры и монет.
+  `CREATE TABLE IF NOT EXISTS battles (
+    id TEXT PRIMARY KEY,
+    creator_id INTEGER NOT NULL,
+    opponent_id INTEGER NOT NULL,
+    status TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    accepted_at TEXT
+  )`,
+  `CREATE INDEX IF NOT EXISTS battles_by_creator ON battles (creator_id)`,
+  `CREATE INDEX IF NOT EXISTS battles_by_opponent ON battles (opponent_id)`,
+  `CREATE TABLE IF NOT EXISTS battle_matches (
+    battle_id TEXT NOT NULL,
+    match_id INTEGER NOT NULL,
+    PRIMARY KEY (battle_id, match_id)
+  )`,
+  `CREATE TABLE IF NOT EXISTS battle_picks (
+    battle_id TEXT NOT NULL,
+    user_id INTEGER NOT NULL,
+    match_id INTEGER NOT NULL,
+    home INTEGER NOT NULL,
+    away INTEGER NOT NULL,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (battle_id, user_id, match_id)
   )`
 ];
 
