@@ -74,13 +74,20 @@ function toast(text) {
 }
 
 // Эмблема клуба. Если картинка не загрузилась, остаётся код команды.
+// Только логотип. Буквы команды показываем, лишь если логотипа нет или он не загрузился.
 function crest(team, size = '') {
-  const img = team.crest ? `<img src="${esc(team.crest)}" alt="" loading="lazy" decoding="async">` : '';
-  return `<span class="crest ${size}" title="${esc(team.short)}"><span class="crest-tla">${esc(team.tla)}</span>${img}</span>`;
+  const inner = team.crest
+    ? `<img src="${esc(team.crest)}" alt="" loading="lazy" decoding="async" data-tla="${esc(team.tla)}">`
+    : `<span class="crest-tla">${esc(team.tla)}</span>`;
+  return `<span class="crest ${size}" title="${esc(team.short)}">${inner}</span>`;
 }
 document.addEventListener('error', (e) => {
   const img = e.target;
-  if (img && img.tagName === 'IMG' && img.parentElement && img.parentElement.classList.contains('crest')) img.remove();
+  if (!img || img.tagName !== 'IMG' || !img.parentElement || !img.parentElement.classList.contains('crest')) return;
+  const tla = document.createElement('span');
+  tla.className = 'crest-tla';
+  tla.textContent = img.dataset.tla || '';
+  img.replaceWith(tla);
 }, true);
 
 // ---------- Telegram: полный экран и кнопка «назад» ----------
@@ -680,11 +687,11 @@ async function loadProfile() {
   const p = state.profile;
   $('friends-count').textContent = p.friendsCount ? p.friendsCount : '';
   $('profile-card').innerHTML = `<div class="glass profile-card">
-    <button type="button" class="hero-dude" data-go="wardrobe" aria-label="Открыть гардероб">
+    <div class="hero-dude">
       <span class="dude-glow" aria-hidden="true"></span>
-      <svg class="dude dude-float" aria-hidden="true"><use href="#dude"/></svg>
-      <span class="dude-btn">${icon('i-shirt')}Гардероб</span>
-    </button>
+      <div class="spin" data-spin role="img" aria-label="Твой персонаж: крути пальцем влево и вправо"></div>
+      <button type="button" class="dude-btn" data-go="wardrobe">${icon('i-shirt')}Гардероб</button>
+    </div>
     <div class="profile-name"><b>${esc(p.firstName || 'Игрок')}</b>
       <span class="profile-wallet"><span class="stat-chip"><span class="coin" aria-hidden="true"></span><span class="num">${p.coins || 0}</span></span>
       <span class="stat-chip"><svg class="ic ic-aura" aria-hidden="true"><use href="#i-target"/></svg><span class="num">${p.aura}</span></span></span></div>
@@ -694,6 +701,7 @@ async function loadProfile() {
       <span><b class="num">${p.settledPredictions}</b><span>сыграно</span></span>
     </div>
   </div>`;
+  mountSpinners();
 }
 
 $('rules-btn').addEventListener('click', () => {
@@ -737,6 +745,7 @@ $('delete-btn').addEventListener('click', async () => {
 // ---------- Гардероб (превью, вещи появятся позже) ----------
 
 function renderWardrobe() {
+  mountSpinners();
   $('wardrobe-tabs').innerHTML = WARDROBE.map((c) => `<button type="button" class="chip chip-icon" role="tab" data-wtab="${c.id}" aria-selected="${state.wardrobe === c.id}">${icon(c.icon)}${esc(c.label)}</button>`).join('');
   const cat = WARDROBE.find((c) => c.id === state.wardrobe);
   $('wardrobe-items').innerHTML = Array.from({ length: 6 }, (_, i) => `
@@ -744,6 +753,69 @@ function renderWardrobe() {
       <svg class="ic ic-item" aria-hidden="true"><use href="#${cat.icon}"/></svg>
       ${i === 0 ? '<span class="item-tag">надето</span>' : `<span class="item-lock">${icon('i-lock')}<span class="num">${(i + 1) * 50}</span></span>`}
     </div>`).join('');
+}
+
+// ---------- Персонаж, которого можно крутить пальцем ----------
+// Четыре ракурса по кругу: спереди → справа → сзади → слева. Палец вправо — персонаж поворачивается вправо.
+
+const DUDE_VIEWS = ['front', 'right', 'back', 'left'];
+const DUDE_STEP = 46; // сколько пикселей провести пальцем на один поворот
+const spinState = { frame: 0 };
+
+function mountSpinners() {
+  document.querySelectorAll('[data-spin]').forEach((el) => {
+    if (el.dataset.ready) { showFrame(el, spinState.frame); return; }
+    el.dataset.ready = '1';
+    el.innerHTML = DUDE_VIEWS.map((v, i) => `<img src="/dude/${v}.webp" alt="" draggable="false" class="${i === spinState.frame ? 'on' : ''}">`).join('')
+      + '<span class="spin-dots" aria-hidden="true">' + DUDE_VIEWS.map(() => '<i></i>').join('') + '</span>'
+      + '<span class="spin-hint" aria-hidden="true">↔ крути</span>';
+    showFrame(el, spinState.frame);
+    let startX = 0; let startFrame = 0; let dragging = false; let moved = false; let lastX = 0; let lastT = 0; let speed = 0;
+    el.addEventListener('pointerdown', (e) => {
+      dragging = true; moved = false; startX = lastX = e.clientX; lastT = performance.now(); speed = 0; startFrame = spinState.frame;
+      el.setPointerCapture(e.pointerId);
+      el.classList.add('grab');
+    });
+    el.addEventListener('pointermove', (e) => {
+      if (!dragging) return;
+      const dx = e.clientX - startX;
+      if (Math.abs(dx) > 6) moved = true;
+      const now = performance.now();
+      speed = (e.clientX - lastX) / Math.max(1, now - lastT);
+      lastX = e.clientX; lastT = now;
+      const steps = Math.round(dx / DUDE_STEP);
+      const frac = dx / DUDE_STEP - steps;
+      const frame = ((startFrame + steps) % 4 + 4) % 4;
+      if (frame !== spinState.frame) { spinState.frame = frame; haptic('select'); }
+      showFrame(el, frame, frac);
+    });
+    const end = () => {
+      if (!dragging) return;
+      dragging = false;
+      el.classList.remove('grab');
+      if (moved) el.closest('.stage, .hero-dude')?.querySelector('.spin-hint')?.remove();
+      // Быстрый взмах докручивает ещё пару ракурсов.
+      let extra = Math.min(3, Math.floor(Math.abs(speed) * 2));
+      const dir = speed > 0 ? 1 : -1;
+      const tick = () => {
+        if (extra-- <= 0) { showFrame(el, spinState.frame); return; }
+        spinState.frame = ((spinState.frame + dir) % 4 + 4) % 4;
+        showFrame(el, spinState.frame, 0);
+        setTimeout(tick, 110);
+      };
+      tick();
+    };
+    el.addEventListener('pointerup', end);
+    el.addEventListener('pointercancel', end);
+  });
+}
+
+function showFrame(el, frame, frac = 0) {
+  el.querySelectorAll('img').forEach((img, i) => {
+    img.classList.toggle('on', i === frame);
+    img.style.transform = i === frame ? `rotateY(${frac * 28}deg) scaleX(${1 - Math.abs(frac) * 0.12})` : '';
+  });
+  el.querySelectorAll('.spin-dots i').forEach((d, i) => d.classList.toggle('on', i === frame));
 }
 
 boot();
