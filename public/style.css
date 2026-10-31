@@ -184,7 +184,7 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--crimson-hi); ou
 .match-row:last-child { border-bottom: none; }
 .match-row:active { background: rgba(255, 255, 255, 0.04); }
 .pair { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; }
-.mid { width: 84px; flex: none; display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.mid { width: 100px; flex: none; display: flex; flex-direction: column; align-items: center; gap: 2px; }
 .mid-main { font-size: 17px; font-weight: 800; letter-spacing: -0.02em; color: var(--ink); }
 .mid-main.time { color: #fff; }
 .mid-sub { font-size: 11px; font-weight: 700; color: var(--faint); white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
@@ -490,3 +490,5 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--crimson-hi); ou
 
 #bn-friend { display: flex; flex-direction: column; gap: 12px; }
 #bn-friend .hint { margin: 0 4px; }
+
+#my-list { display: flex; flex-direction: column; gap: 14px; }

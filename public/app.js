@@ -350,6 +350,16 @@ function whenShort(date) {
   return `${shortDayFmt.format(new Date(date))} ${t} МСК`;
 }
 
+// Короткая подпись для узких строк: «16:00», «завтра 16:00», «2 нояб. 16:00». Что это МСК, сказано в шапке списка.
+function whenTiny(date) {
+  const diff = dayDiff(date);
+  const t = timeFmt.format(new Date(date));
+  if (diff === 0) return t;
+  if (diff === 1) return `завтра ${t}`;
+  if (diff === -1) return `вчера ${t}`;
+  return `${shortDayFmt.format(new Date(date))} ${t}`;
+}
+
 function untilText(ms) {
   if (ms <= 0) return '0:00';
   const h = Math.floor(ms / 3600000);
@@ -601,7 +611,8 @@ function renderMy() {
       : '<div class="glass empty"><b>Пока ничего не сыграно</b>Итоги появятся после финального свистка</div>';
     return;
   }
-  $('my-list').innerHTML = `<div class="glass list-card">${items.map(myRow).join('')}</div>`;
+  $('my-list').innerHTML = (state.mytab === 'wait' ? `<p class="tz-note">${icon('i-clock')}Крупно твой прогноз, ниже время матча по МСК</p>` : '')
+    + `<div class="glass list-card">${items.map(myRow).join('')}</div>`;
 }
 
 function myRow(m) {
@@ -611,7 +622,8 @@ function myRow(m) {
   if (isDone(m)) right = `<span class="my-pts ${p.points > 0 ? 'pts-hit' : 'pts-zero'} num">+${p.points}</span>`;
   else if (m.open) right = '<span class="tag tag-open">Изменить</span>';
   else right = `<span class="tag tag-none">${LIVE.includes(m.status) ? 'идёт' : 'ждём'}</span>`;
-  const sub = isDone(m) ? `счёт ${m.score.home}:${m.score.away}` : whenShort(m.utcDate);
+  const sub = isDone(m) ? `счёт ${m.score.home}:${m.score.away}`
+    : LIVE.includes(m.status) ? (m.score ? `сейчас ${m.score.home}:${m.score.away}` : 'идёт') : whenTiny(m.utcDate);
   return `<button type="button" class="match-row" data-match="${m.id}" aria-label="${esc(`${m.home.short} — ${m.away.short}`)}">
     <span class="pair">${crest(m.home)}<span class="mid"><span class="mid-main num">${p.home}:${p.away}</span><span class="mid-sub">${esc(sub)}</span></span>${crest(m.away)}</span>
     ${exact ? '<span class="stamp stamp-sm">ТОЧНЯК!</span>' : ''}
