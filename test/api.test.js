@@ -15,6 +15,7 @@ function makeEnv() {
     WEBHOOK_SECRET: 'test-secret',
     COMPETITIONS: 'PL',
     LOCK_MINUTES: '5',
+    MAIN_APP: '0',
     ASSETS: { fetch: async () => new Response('asset') }
   };
 }
@@ -407,4 +408,16 @@ test('старый аккаунт проходит регистрацию зан
   assert.equal(r.data.profile.aura, 42, 'аура на месте');
   r = await call(env, '/api/matches', { user: max });
   assert.equal(r.status, 200);
+});
+
+test('приглашение сразу открывает мини-апп, когда он включён в BotFather', async () => {
+  const env = makeEnv();
+  env.MAIN_APP = '1';
+  await call(env, '/api/me', { user: max });
+  let r = await call(env, '/api/auth', { user: max, method: 'POST', body: { accept: true } });
+  const code = r.data.profile.friendCode;
+  r = await call(env, '/api/friends', { user: max });
+  assert.equal(r.data.link, `https://t.me/tochnyak_bot?startapp=f_${code}`);
+  const page = await worker.fetch(new Request(`https://tochnyak.test/i/${code}`), env);
+  assert.match(await page.text(), new RegExp(`startapp=f_${code}`));
 });

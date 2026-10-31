@@ -35,8 +35,25 @@ function botUsername(env) {
   return env.BOT_USERNAME || 'tochnyak_bot';
 }
 
-function inviteLink(env, code) {
-  return `https://t.me/${botUsername(env)}?start=f_${code}`;
+// direct: ссылка сразу открывает мини-апп (нужен Main Mini App в BotFather), иначе — чат с ботом.
+function inviteLink(env, code, direct = false) {
+  return `https://t.me/${botUsername(env)}?${direct ? 'startapp' : 'start'}=f_${code}`;
+}
+
+// Включён ли у бота Main Mini App. Спрашиваем Telegram раз в 10 минут; MAIN_APP=1/0 в настройках перекрывает.
+let mainAppCache = { value: false, at: 0 };
+async function hasMainApp(env, now = Date.now()) {
+  if (env.MAIN_APP === '1') return true;
+  if (env.MAIN_APP === '0' || !env.BOT_TOKEN) return false;
+  if (now - mainAppCache.at < 600000) return mainAppCache.value;
+  try {
+    const res = await Promise.race([
+      botApi(env.BOT_TOKEN, 'getMe', {}),
+      new Promise((resolve) => setTimeout(() => resolve(null), 2500))
+    ]);
+    if (res && res.ok) mainAppCache = { value: Boolean(res.result && res.result.has_main_web_app), at: now };
+  } catch { /* оставим прошлое значение */ }
+  return mainAppCache.value;
 }
 
 const escHtml = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -407,7 +424,7 @@ async function handleApi(request, env, url, now, ctx) {
     return json({
       period,
       code,
-      link: code ? inviteLink(env, code) : null,
+      link: code ? inviteLink(env, code, await hasMainApp(env, now)) : null,
       shareLink: code ? `${url.origin}/i/${code}` : null,
       rows: results.map((r, i) => ({
         rank: i + 1,
@@ -434,7 +451,7 @@ async function handleApi(request, env, url, now, ctx) {
         photo_height: 1672,
         caption: inviteCaption(tgUser.firstName),
         parse_mode: 'HTML',
-        reply_markup: { inline_keyboard: [[{ text: 'Принять вызов', url: inviteLink(env, code) }]] }
+        reply_markup: { inline_keyboard: [[{ text: 'Принять вызов', url: inviteLink(env, code, await hasMainApp(env, now)) }]] }
       },
       allow_user_chats: true,
       allow_group_chats: true,
@@ -609,9 +626,9 @@ async function handleBot(request, env, url) {
 }
 
 // Страница-ссылка приглашения: в Telegram разворачивается в большую картинку, а при открытии ведёт в бота.
-function handleInvitePage(env, url) {
+async function handleInvitePage(env, url) {
   const m = /^\/i\/([a-z0-9]{8})$/.exec(url.pathname);
-  const target = m ? inviteLink(env, m[1]) : `https://t.me/${botUsername(env)}`;
+  const target = m ? inviteLink(env, m[1], await hasMainApp(env)) : `https://t.me/${botUsername(env)}`;
   const t = escHtml(target);
   const img = `${url.origin}/invite.jpg`;
   const html = `<!doctype html><html lang="ru"><head><meta charset="utf-8">
