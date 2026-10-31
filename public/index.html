@@ -42,6 +42,8 @@
     <g class="eyes"><ellipse cx="69" cy="60" rx="8" ry="5.5" fill="#FF2E63" opacity=".45"/><ellipse cx="91" cy="60" rx="8" ry="5.5" fill="#FF2E63" opacity=".45"/><ellipse cx="69" cy="60" rx="5.5" ry="3.6" fill="#ffe1ea"/><ellipse cx="91" cy="60" rx="5.5" ry="3.6" fill="#ffe1ea"/></g>
     <g data-slot="cap"><path d="M52 48c0-17 12-28 28-28s28 11 28 26H52z" fill="#15151c"/><path d="M98 44c8 0 18 1 24 5l-2 4c-7-2-15-3-22-3z" fill="#15151c"/><circle cx="80" cy="34" r="7" fill="none" stroke="#FF2E63" stroke-width="2.4"/><circle cx="80" cy="34" r="2.6" fill="none" stroke="#FF2E63" stroke-width="2"/></g>
   </symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
+  <symbol id="i-bag" viewBox="0 0 24 24"><path d="M5 8h14l-1 13H6z"/><path d="M9 8V6a3 3 0 0 1 6 0v2"/></symbol>
   <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
   <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2.5"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></symbol>
   <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></symbol>
@@ -137,7 +139,7 @@
   <section id="view-profile" class="view" aria-label="Профиль" hidden>
     <div id="profile-card"></div>
     <div class="tiles">
-      <button type="button" class="glass tile" data-go="wardrobe"><svg class="ic" aria-hidden="true"><use href="#i-shirt"/></svg><span>Гардероб</span></button>
+      <button type="button" class="glass tile" data-go="shop"><svg class="ic" aria-hidden="true"><use href="#i-bag"/></svg><span>Магазин</span></button>
       <button type="button" class="glass tile" data-go="friends"><svg class="ic" aria-hidden="true"><use href="#i-users"/></svg><span>Друзья <b id="friends-count" class="num"></b></span></button>
       <button type="button" class="glass tile" id="rules-btn"><svg class="ic" aria-hidden="true"><use href="#i-book"/></svg><span>Аура и монеты</span></button>
       <a class="glass tile" href="/privacy.html"><svg class="ic" aria-hidden="true"><use href="#i-shield"/></svg><span>Данные и политика</span></a>
@@ -145,18 +147,14 @@
     <button type="button" id="delete-btn" class="btn btn-ghost"><svg class="ic" aria-hidden="true"><use href="#i-trash"/></svg>Удалить аккаунт</button>
   </section>
 
-  <section id="view-wardrobe" class="view" aria-label="Гардероб" hidden>
+  <section id="view-shop" class="view" aria-label="Магазин" hidden>
     <div class="subhead">
       <button type="button" class="glass icon-btn" data-go="profile" aria-label="Назад"><svg class="ic" aria-hidden="true"><use href="#i-back"/></svg></button>
-      <h2 class="title">Гардероб</h2>
-      <span class="glass coins"><span class="coin" aria-hidden="true"></span><span class="num" id="wardrobe-coins">0</span></span>
+      <h2 class="title">Магазин</h2>
+      <span class="glass coins"><span class="coin" aria-hidden="true"></span><span class="num" id="shop-coins">0</span></span>
     </div>
-    <div class="glass stage">
-      <div class="spin" data-spin role="img" aria-label="Твой персонаж: крути пальцем влево и вправо"></div>
-      <span class="stage-note">Вещи появятся скоро</span>
-    </div>
-    <div class="chips" id="wardrobe-tabs" role="tablist" aria-label="Категории"></div>
-    <div class="items" id="wardrobe-items"></div>
+    <div id="shop-stage"></div>
+    <div class="shop-grid" id="shop-grid"></div>
   </section>
 
   <nav class="glass tabbar" aria-label="Разделы">

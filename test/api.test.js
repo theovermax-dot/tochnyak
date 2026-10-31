@@ -214,3 +214,31 @@ test('приглашение: подпись, готовое сообщение 
   assert.match(html, /og:image" content="https:\/\/tochnyak.test\/invite.jpg/);
   assert.match(html, new RegExp(`start=f_${code}`));
 });
+
+test('магазин: покупка за монеты, нехватка, выбор', async () => {
+  const chars = await import('../src/characters.js');
+  chars.CHARACTERS.push({ id: 'test-hero', name: 'Тест', price: 30, rarity: 'Редкий' });
+  try {
+    const env = makeEnv();
+    await call(env, '/api/auth', { user: max, method: 'POST', body: { accept: true } });
+    let r = await call(env, '/api/shop', { user: max });
+    assert.equal(r.data.selected, 'tochnyak');
+    assert.equal(r.data.items.find((i) => i.id === 'tochnyak').owned, true);
+    r = await call(env, '/api/shop/buy', { user: max, method: 'POST', body: { id: 'test-hero' } });
+    assert.equal(r.status, 409, 'монет нет');
+    r = await call(env, '/api/shop/select', { user: max, method: 'POST', body: { id: 'test-hero' } });
+    assert.equal(r.status, 403);
+    env.DB.db.exec('UPDATE users SET coins = 40 WHERE id = 1');
+    r = await call(env, '/api/shop/buy', { user: max, method: 'POST', body: { id: 'test-hero' } });
+    assert.equal(r.data.coins, 10);
+    assert.equal(r.data.selected, 'test-hero');
+    r = await call(env, '/api/shop/buy', { user: max, method: 'POST', body: { id: 'test-hero' } });
+    assert.equal(r.data.coins, 10, 'второй раз не списывает');
+    r = await call(env, '/api/shop/select', { user: max, method: 'POST', body: { id: 'tochnyak' } });
+    assert.equal(r.data.selected, 'tochnyak');
+    r = await call(env, '/api/me', { user: max });
+    assert.equal(r.data.profile.character, 'tochnyak');
+  } finally {
+    chars.CHARACTERS.pop();
+  }
+});

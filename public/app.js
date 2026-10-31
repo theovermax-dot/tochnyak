@@ -10,13 +10,6 @@ const LEAGUE_ORDER = ['CL', 'PL', 'PD', 'SA', 'BL1', 'FL1', 'DED'];
 const QUICK_SCORES = [[1, 0], [2, 0], [2, 1], [1, 1], [0, 0], [0, 1], [1, 2], [3, 1], [2, 2], [0, 2]];
 const LIVE = ['IN_PLAY', 'PAUSED'];
 
-const WARDROBE = [
-  { id: 'cap', label: 'Кепки', icon: 'i-cap' },
-  { id: 'acc', label: 'Аксессуары', icon: 'i-glasses' },
-  { id: 'shirt', label: 'Футболки и кофты', icon: 'i-shirt' },
-  { id: 'pants', label: 'Штаны и шорты', icon: 'i-pants' },
-  { id: 'shoes', label: 'Кроссовки', icon: 'i-shoe' }
-];
 
 const state = {
   profile: null,
@@ -26,7 +19,8 @@ const state = {
   period: 'week',
   fperiod: 'week',
   mytab: 'wait',
-  wardrobe: 'cap',
+  shop: null,
+  shopPick: null,
   view: 'matches',
   sheet: null,
   friendLink: null,
@@ -125,13 +119,13 @@ function syncSafeArea() {
 
 function syncBackButton() {
   if (!tg || !tg.BackButton) return;
-  const show = !$('sheet').hidden || state.view === 'wardrobe';
+  const show = !$('sheet').hidden || state.view === 'shop';
   try { show ? tg.BackButton.show() : tg.BackButton.hide(); } catch { /* старые клиенты */ }
 }
 
 function onBack() {
   if (!$('sheet').hidden) closeSheet();
-  else if (state.view === 'wardrobe') go('profile');
+  else if (state.view === 'shop') go('profile');
 }
 
 // ---------- Вход ----------
@@ -216,18 +210,18 @@ function renderTop() {
   const p = state.profile;
   $('top-aura').textContent = p.aura.toLocaleString('ru-RU');
   $('top-coins').textContent = (p.coins || 0).toLocaleString('ru-RU');
-  $('wardrobe-coins').textContent = (p.coins || 0).toLocaleString('ru-RU');
+  $('shop-coins').textContent = (p.coins || 0).toLocaleString('ru-RU');
   $('top-avatar').textContent = initials(p.firstName);
 }
 
 // ---------- Навигация ----------
 
-const VIEWS = ['matches', 'my', 'friends', 'rating', 'profile', 'wardrobe'];
+const VIEWS = ['matches', 'my', 'friends', 'rating', 'profile', 'shop'];
 
 function go(view) {
   state.view = view;
   for (const v of VIEWS) $(`view-${v}`).hidden = v !== view;
-  const tab = view === 'wardrobe' ? 'profile' : view;
+  const tab = view === 'shop' ? 'profile' : view;
   document.querySelectorAll('.tabbar button').forEach((b) => {
     if (b.dataset.go === tab) b.setAttribute('aria-current', 'page');
     else b.removeAttribute('aria-current');
@@ -239,7 +233,7 @@ function go(view) {
   if (view === 'friends') loadFriends();
   if (view === 'rating') loadRating();
   if (view === 'profile') loadProfile();
-  if (view === 'wardrobe') renderWardrobe();
+  if (view === 'shop') loadShop();
 }
 
 function setSelected(attr, value) {
@@ -258,8 +252,10 @@ document.addEventListener('click', (e) => {
   if (fperiod) { state.fperiod = fperiod.dataset.fperiod; setSelected('fperiod', state.fperiod); haptic('select'); loadFriends(); return; }
   const mytab = t.closest('[data-mytab]');
   if (mytab) { state.mytab = mytab.dataset.mytab; setSelected('mytab', state.mytab); haptic('select'); renderMy(); return; }
-  const wtab = t.closest('[data-wtab]');
-  if (wtab) { state.wardrobe = wtab.dataset.wtab; haptic('select'); renderWardrobe(); return; }
+  const pick = t.closest('[data-pick]');
+  if (pick) { state.shopPick = pick.dataset.pick; haptic('select'); renderShop(); return; }
+  const shopAct = t.closest('[data-shop]');
+  if (shopAct) { shopAction(shopAct.dataset.shop, shopAct.dataset.id); return; }
   const friend = t.closest('[data-friend]');
   if (friend) { removeFriend(friend.dataset.friend, friend.dataset.name); return; }
   const row = t.closest('[data-match]');
@@ -689,8 +685,8 @@ async function loadProfile() {
   $('profile-card').innerHTML = `<div class="glass profile-card">
     <div class="hero-dude">
       <span class="dude-glow" aria-hidden="true"></span>
-      <div class="spin" data-spin role="img" aria-label="Твой персонаж: крути пальцем влево и вправо"></div>
-      <button type="button" class="dude-btn" data-go="wardrobe">${icon('i-shirt')}Гардероб</button>
+      <div class="spin" data-spin="${esc(p.character || 'tochnyak')}" role="img" aria-label="Твой персонаж: крути пальцем влево и вправо"></div>
+      <button type="button" class="dude-btn" data-go="shop">${icon('i-bag')}Магазин</button>
     </div>
     <div class="profile-name"><b>${esc(p.firstName || 'Игрок')}</b>
       <span class="profile-wallet"><span class="stat-chip"><span class="coin" aria-hidden="true"></span><span class="num">${p.coins || 0}</span></span>
@@ -742,35 +738,94 @@ $('delete-btn').addEventListener('click', async () => {
   }
 });
 
-// ---------- Гардероб (превью, вещи появятся позже) ----------
+// ---------- Магазин персонажей ----------
 
-function renderWardrobe() {
+const SOON_SLOTS = 3; // карточки «скоро», пока новых персонажей нет
+
+async function loadShop() {
+  if (!state.shop) $('shop-grid').innerHTML = '<div class="glass empty"><span class="spinner" aria-hidden="true"></span></div>';
+  try {
+    state.shop = await api('/api/shop');
+    if (!state.shopPick || !state.shop.items.some((i) => i.id === state.shopPick)) state.shopPick = state.shop.selected;
+    renderShop();
+  } catch (err) {
+    $('shop-grid').innerHTML = `<div class="glass empty"><b>Магазин не загрузился</b>${esc(err.message)}</div>`;
+  }
+}
+
+function shopButton(item, coins) {
+  if (item.selected) return `<button type="button" class="btn btn-glass" disabled>${icon('i-check')}Выбран</button>`;
+  if (item.owned) return `<button type="button" class="btn btn-primary" data-shop="select" data-id="${esc(item.id)}">Выбрать</button>`;
+  if (coins < item.price) return `<button type="button" class="btn btn-glass" disabled><span class="coin" aria-hidden="true"></span><span class="num">${item.price}</span> · не хватает ${item.price - coins}</button>`;
+  return `<button type="button" class="btn btn-primary" data-shop="buy" data-id="${esc(item.id)}">Купить за <span class="coin" aria-hidden="true"></span><span class="num">${item.price}</span></button>`;
+}
+
+function renderShop() {
+  const shop = state.shop;
+  if (!shop) return;
+  $('shop-coins').textContent = shop.coins.toLocaleString('ru-RU');
+  const item = shop.items.find((i) => i.id === state.shopPick) || shop.items[0];
+  $('shop-stage').innerHTML = `<div class="glass shop-stage">
+    <div class="shop-stage-art">
+      <span class="dude-glow" aria-hidden="true"></span>
+      <div class="spin" data-spin="${esc(item.id)}" role="img" aria-label="${esc(item.name)}: крути пальцем"></div>
+    </div>
+    <div class="shop-stage-info"><b>${esc(item.name)}</b><span class="rarity">${esc(item.rarity || '')}</span></div>
+    ${shopButton(item, shop.coins)}
+  </div>`;
+  const cards = shop.items.map((i) => `
+    <button type="button" class="glass shop-card${i.id === item.id ? ' picked' : ''}" data-pick="${esc(i.id)}" aria-pressed="${i.id === item.id}">
+      <img src="/chars/${esc(i.id)}/front.webp" alt="" loading="lazy">
+      <span class="shop-card-name">${esc(i.name)}</span>
+      <span class="shop-card-price">${i.selected ? 'выбран' : i.owned ? 'есть' : `<span class="coin" aria-hidden="true"></span><span class="num">${i.price}</span>`}</span>
+    </button>`);
+  for (let k = 0; k < SOON_SLOTS; k += 1) {
+    cards.push(`<div class="glass shop-card soon" aria-label="Скоро новый персонаж">
+      <img src="/chars/tochnyak/front.webp" alt="" loading="lazy">
+      <span class="shop-card-name">Скоро</span>
+      <span class="shop-card-price">${icon('i-lock')}</span>
+    </div>`);
+  }
+  $('shop-grid').innerHTML = cards.join('');
   mountSpinners();
-  $('wardrobe-tabs').innerHTML = WARDROBE.map((c) => `<button type="button" class="chip chip-icon" role="tab" data-wtab="${c.id}" aria-selected="${state.wardrobe === c.id}">${icon(c.icon)}${esc(c.label)}</button>`).join('');
-  const cat = WARDROBE.find((c) => c.id === state.wardrobe);
-  $('wardrobe-items').innerHTML = Array.from({ length: 6 }, (_, i) => `
-    <div class="glass item${i === 0 ? ' item-on' : ''}">
-      <svg class="ic ic-item" aria-hidden="true"><use href="#${cat.icon}"/></svg>
-      ${i === 0 ? '<span class="item-tag">надето</span>' : `<span class="item-lock">${icon('i-lock')}<span class="num">${(i + 1) * 50}</span></span>`}
-    </div>`).join('');
+}
+
+async function shopAction(action, id) {
+  const ok = action === 'buy'
+    ? await confirmDialog(`Купить «${state.shop.items.find((i) => i.id === id).name}»? Монеты спишутся, аура и рейтинг не изменятся.`)
+    : true;
+  if (!ok) return;
+  try {
+    state.shop = await api(`/api/shop/${action}`, { method: 'POST', body: { id } });
+    haptic('success');
+    if (state.profile) { state.profile.coins = state.shop.coins; state.profile.character = state.shop.selected; renderTop(); }
+    toast(action === 'buy' ? 'Персонаж твой' : 'Персонаж выбран');
+    renderShop();
+  } catch (err) {
+    haptic('error');
+    toast(err.message);
+  }
 }
 
 // ---------- Персонаж, которого можно крутить пальцем ----------
-// 12 ракурсов через каждые 30°. Между соседними ракурсами картинка плавно перетекает,
-// поэтому поворот идёт непрерывно, без рывков. После броска пальцем персонаж докручивается по инерции.
+// Четыре ракурса без фона: спереди, справа, сзади, слева. Между ними персонаж плавно «доворачивается»:
+// сужается к ребру и раскрывается следующим ракурсом. После броска пальцем крутится по инерции.
 
-const DUDE_FRAMES = 12;
-const DEG_PER_PX = 0.85;
+const VIEWS4 = ['front', 'right', 'back', 'left'];
+const DEG_PER_PX = 1.1;
 const spin = { angle: 0, els: new Set(), raf: 0, velocity: 0, dragging: false };
 
 function mountSpinners() {
   document.querySelectorAll('[data-spin]').forEach((el) => {
     spin.els.add(el);
-    if (el.dataset.ready) { paintSpin(); return; }
-    el.dataset.ready = '1';
+    const id = el.dataset.spin || 'tochnyak';
+    if (el.dataset.ready === id) return;
+    el.dataset.ready = id;
     el.innerHTML = '<div class="spin-imgs">'
-      + Array.from({ length: DUDE_FRAMES }, (_, i) => `<img src="/dude/${String(i).padStart(2, '0')}.webp" alt="" draggable="false" decoding="async">`).join('')
-      + '</div><span class="spin-hint" aria-hidden="true">↔ крути</span>';
+      + VIEWS4.map((v) => `<img src="/chars/${encodeURIComponent(id)}/${v}.webp" alt="" draggable="false" decoding="async">`).join('')
+      + '</div><span class="spin-floor" aria-hidden="true"></span>';
+    if (el.dataset.bound) return;
+    el.dataset.bound = '1';
     let lastX = 0; let lastT = 0;
     // iOS: не даём странице и Telegram уехать, пока палец крутит персонажа.
     el.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
@@ -780,15 +835,13 @@ function mountSpinners() {
       lastX = e.clientX; lastT = performance.now();
       el.setPointerCapture(e.pointerId);
       el.classList.add('grab');
-      const hint = el.querySelector('.spin-hint'); if (hint) hint.remove();
     });
     el.addEventListener('pointermove', (e) => {
       if (!spin.dragging) return;
       e.preventDefault();
       const now = performance.now();
       const d = (e.clientX - lastX) * DEG_PER_PX;
-      const dt = Math.max(1, now - lastT);
-      spin.velocity = spin.velocity * 0.6 + (d / dt) * 0.4; // градусы в миллисекунду, сглаженно
+      spin.velocity = spin.velocity * 0.6 + (d / Math.max(1, now - lastT)) * 0.4;
       lastX = e.clientX; lastT = now;
       setAngle(spin.angle + d);
     });
@@ -806,9 +859,9 @@ function mountSpinners() {
 }
 
 function setAngle(a) {
-  const before = Math.floor(spin.angle / 30);
+  const before = Math.round(spin.angle / 90);
   spin.angle = a;
-  if (Math.floor(a / 30) !== before) haptic('select');
+  if (Math.round(a / 90) !== before) haptic('select');
   paintSpin();
 }
 
@@ -817,35 +870,39 @@ function coast() {
   let prev = performance.now();
   const step = (now) => {
     const dt = Math.min(40, now - prev); prev = now;
-    if (Math.abs(spin.velocity) > 0.02) {
+    if (Math.abs(spin.velocity) > 0.03) {
       setAngle(spin.angle + spin.velocity * dt);
-      spin.velocity *= Math.pow(0.994, dt);
+      spin.velocity *= Math.pow(0.993, dt);
       spin.raf = requestAnimationFrame(step);
       return;
     }
-    const target = Math.round(spin.angle / 30) * 30;
+    const target = Math.round(spin.angle / 90) * 90;
     const diff = target - spin.angle;
     if (Math.abs(diff) < 0.3) { spin.angle = target; paintSpin(); return; }
-    spin.angle += diff * Math.min(1, dt * 0.012);
+    spin.angle += diff * Math.min(1, dt * 0.014);
     paintSpin();
     spin.raf = requestAnimationFrame(step);
   };
   spin.raf = requestAnimationFrame(step);
 }
 
+const clamp01 = (x) => Math.min(1, Math.max(0, x));
+
 function paintSpin() {
-  const pos = ((spin.angle / 30) % DUDE_FRAMES + DUDE_FRAMES) % DUDE_FRAMES;
+  const pos = ((spin.angle / 90) % 4 + 4) % 4;
   const i = Math.floor(pos);
-  const j = (i + 1) % DUDE_FRAMES;
-  // Переход сжат к середине: двойного силуэта почти не видно, а движение остаётся непрерывным.
-  const raw = pos - i;
-  const t = Math.min(1, Math.max(0, (raw - 0.2) / 0.6));
+  const j = (i + 1) % 4;
+  const p = pos - i;
+  // Ширина: полная на ракурсе, вдвое уже на середине поворота (человек в профиль тоже уже).
+  const sx = 0.55 + 0.45 * Math.abs(Math.cos(Math.PI * p));
+  const oi = clamp01((0.58 - p) / 0.16);
+  const oj = clamp01((p - 0.42) / 0.16);
   for (const el of spin.els) {
     if (!el.isConnected) { spin.els.delete(el); continue; }
     el.querySelectorAll('.spin-imgs img').forEach((img, k) => {
-      if (k === i) { img.style.opacity = '1'; img.style.zIndex = '1'; }
-      else if (k === j) { img.style.opacity = String(t); img.style.zIndex = '2'; }
-      else { img.style.opacity = '0'; img.style.zIndex = '0'; }
+      const o = k === i ? oi : k === j ? oj : 0;
+      img.style.opacity = String(o);
+      img.style.transform = o ? `scaleX(${sx.toFixed(3)})` : '';
     });
   }
 }

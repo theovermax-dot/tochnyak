@@ -317,20 +317,18 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--crimson-hi); ou
 
 /* Персонаж в профиле */
 .hero-dude { position: relative; width: 100%; height: 330px; display: flex; align-items: flex-end; justify-content: center; border-radius: 20px; overflow: hidden; }
-.hero-dude { background: radial-gradient(70% 60% at 50% 60%, #12070c 0%, #050507 70%); }
-.dude-glow { display: none; position: absolute; left: 50%; bottom: 10px; width: 240px; height: 240px; transform: translateX(-50%); border-radius: 50%;
+.dude-glow { position: absolute; left: 50%; bottom: 40px; width: 280px; height: 280px; transform: translateX(-50%); border-radius: 50%;
   background: radial-gradient(circle, rgba(197, 3, 55, 0.55) 0%, rgba(197, 3, 55, 0.12) 45%, rgba(197, 3, 55, 0) 70%); }
-/* Крутилка персонажа */
+/* Крутилка персонажа: без фона, с тенью на полу и свечением сзади */
 .spin { position: relative; width: 100%; height: 100%; touch-action: none; cursor: grab; -webkit-user-select: none; user-select: none; }
 .spin.grab { cursor: grabbing; }
-.spin-imgs {
-  position: absolute; left: 50%; bottom: 0; height: 100%; aspect-ratio: 460 / 660; translate: -50% 0;
-  -webkit-mask-image: radial-gradient(ellipse 50% 52% at 50% 50%, #000 62%, transparent 100%);
-  mask-image: radial-gradient(ellipse 50% 52% at 50% 50%, #000 62%, transparent 100%);
-}
+.spin-imgs { position: absolute; left: 50%; bottom: 14px; height: calc(100% - 24px); aspect-ratio: 300 / 720; translate: -50% 0; z-index: 1; }
 .spin:not(.grab) .spin-imgs { animation: float 3.2s ease-in-out infinite; }
-@keyframes float { 50% { translate: -50% -4px; } }
-.spin-imgs img { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; pointer-events: none; }
+@keyframes float { 50% { translate: -50% -5px; } }
+.spin-imgs img { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; pointer-events: none; transform-origin: 50% 100%;
+  filter: drop-shadow(0 0 1px rgba(255, 46, 99, 0.35)) drop-shadow(0 10px 16px rgba(0, 0, 0, 0.5)); }
+.spin-floor { position: absolute; left: 50%; bottom: 8px; width: 46%; height: 16px; translate: -50% 0; border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(0, 0, 0, 0.6), rgba(0, 0, 0, 0)); }
 .spin-hint { position: absolute; left: 12px; top: 10px; font-size: 12px; font-weight: 800; color: var(--muted); padding: 5px 10px; border-radius: 999px; background: rgba(255, 255, 255, 0.08); }
 .dude-btn { position: absolute; right: 8px; top: 8px; z-index: 2; color: var(--ink); display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 12px; border-radius: 999px;
   background: rgba(255, 255, 255, 0.1); border: 1px solid var(--glass-line); font-size: 13px; font-weight: 800; -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); }
@@ -339,3 +337,20 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--crimson-hi); ou
 .profile-name b { font-family: 'Unbounded', sans-serif; font-weight: 600; font-size: 19px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .profile-wallet { display: inline-flex; gap: 12px; font-size: 15px; font-weight: 800; flex: none; }
 .dude { width: 150px; height: 244px; }
+
+/* Магазин */
+.shop-stage { border-radius: 28px; padding: 14px; display: flex; flex-direction: column; gap: 12px; }
+.shop-stage-art { position: relative; height: 320px; display: flex; justify-content: center; overflow: hidden; border-radius: 20px; }
+.shop-stage-info { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding: 0 4px; }
+.shop-stage-info b { font-family: 'Unbounded', sans-serif; font-weight: 600; font-size: 19px; }
+.rarity { font-size: 12px; font-weight: 800; color: var(--pink-soft); background: rgba(197, 3, 55, 0.24); padding: 4px 10px; border-radius: 999px; }
+.shop-stage .btn .coin { width: 16px; height: 16px; }
+.shop-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.shop-card { border-radius: 20px; padding: 10px 10px 12px; display: flex; flex-direction: column; align-items: center; gap: 6px; color: var(--ink); text-align: center; }
+.shop-card img { height: 150px; width: auto; filter: drop-shadow(0 8px 12px rgba(0, 0, 0, 0.5)); }
+.shop-card.picked { border-color: var(--crimson-hi); box-shadow: inset 0 0 0 1px var(--crimson-hi), 0 0 24px rgba(197, 3, 55, 0.25); }
+.shop-card-name { font-weight: 800; font-size: 14px; }
+.shop-card-price { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; font-weight: 800; color: var(--muted); }
+.shop-card-price .ic { width: 16px; height: 16px; }
+.shop-card.soon img { filter: brightness(0) drop-shadow(0 0 1px rgba(255, 255, 255, 0.35)); opacity: .55; }
+.shop-card.soon .shop-card-name { color: var(--faint); }

@@ -47,6 +47,14 @@ const SCHEMA = [
   `CREATE INDEX IF NOT EXISTS predictions_by_match ON predictions (match_id)`,
   `CREATE INDEX IF NOT EXISTS predictions_by_settled ON predictions (settled_at)`,
   `CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)`,
+  // Купленные персонажи. Базовый есть у всех и сюда не пишется.
+  `CREATE TABLE IF NOT EXISTS owned_characters (
+    user_id INTEGER NOT NULL,
+    character_id TEXT NOT NULL,
+    bought_at TEXT NOT NULL,
+    price INTEGER NOT NULL,
+    PRIMARY KEY (user_id, character_id)
+  )`,
   // Друзья: связь хранится в обе стороны, чтобы список читался одним запросом.
   `CREATE TABLE IF NOT EXISTS friends (
     user_id INTEGER NOT NULL,
@@ -61,7 +69,8 @@ const COLUMNS = [
   'ALTER TABLE matches ADD COLUMN home_crest TEXT',
   'ALTER TABLE matches ADD COLUMN away_crest TEXT',
   'ALTER TABLE users ADD COLUMN friend_code TEXT',
-  'ALTER TABLE users ADD COLUMN coins INTEGER NOT NULL DEFAULT 0'
+  'ALTER TABLE users ADD COLUMN coins INTEGER NOT NULL DEFAULT 0',
+  "ALTER TABLE users ADD COLUMN character TEXT NOT NULL DEFAULT 'tochnyak'"
 ];
 
 async function migrate(db) {

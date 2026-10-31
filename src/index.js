@@ -5,6 +5,7 @@ import { ensureSchema, nowIso, newFriendCode } from './db.js';
 import { validateInitData, botApi } from './telegram.js';
 import { syncAndSettle } from './footballData.js';
 import { COINS } from './scoring.js';
+import { CHARACTERS, DEFAULT_CHARACTER, characterById } from './characters.js';
 
 const MAX_GOALS = 15;
 const MAX_FRIENDS = 300;
@@ -65,7 +66,7 @@ export function welcomeCaption(inviter) {
     '',
     '🎯 Точный счёт — <b>+10 ауры</b>',
     '🏆 Недельный рейтинг и лига друзей',
-    '👕 Монеты на гардероб персонажа',
+    '🛍 Монеты на новых персонажей',
     '',
     'Вход через Telegram, без регистрации. Игра бесплатная: без ставок и без денег.'
   ].join('\n');
@@ -88,6 +89,24 @@ function matchOut(m, env, now) {
     away: { name: m.away_name, short: m.away_short, tla: m.away_tla, crest: crestUrl(m.away_crest) },
     score: m.home_score == null ? null : { home: m.home_score, away: m.away_score },
     prediction: m.pred_home == null ? null : { home: m.pred_home, away: m.pred_away, points: m.pred_points }
+  };
+}
+
+async function ownedSet(db, userId) {
+  const { results } = await db.prepare('SELECT character_id FROM owned_characters WHERE user_id = ?1').bind(userId).all();
+  const set = new Set(results.map((r) => r.character_id));
+  for (const c of CHARACTERS) if (c.price === 0) set.add(c.id);
+  return set;
+}
+
+async function shopState(db, userId) {
+  const user = await db.prepare('SELECT coins, character FROM users WHERE id = ?1').bind(userId).first();
+  const owned = await ownedSet(db, userId);
+  const selected = characterById(user.character) ? user.character : DEFAULT_CHARACTER;
+  return {
+    coins: user.coins || 0,
+    selected,
+    items: CHARACTERS.map((c) => ({ ...c, owned: owned.has(c.id), selected: c.id === selected }))
   };
 }
 
@@ -132,7 +151,7 @@ async function currentTelegramUser(request, env) {
 }
 
 async function loadProfile(db, userId, now) {
-  const user = await db.prepare('SELECT id, first_name, aura, coins, created_at FROM users WHERE id = ?1').bind(userId).first();
+  const user = await db.prepare('SELECT id, first_name, aura, coins, character, created_at FROM users WHERE id = ?1').bind(userId).first();
   if (!user) return null;
   const weekStart = weekStartIso(now);
   const week = await db.prepare(
@@ -148,6 +167,7 @@ async function loadProfile(db, userId, now) {
     firstName: user.first_name,
     aura: user.aura,
     coins: user.coins || 0,
+    character: characterById(user.character) ? user.character : DEFAULT_CHARACTER,
     weekAura: week.pts,
     settledPredictions: totals.total || 0,
     exactHits: totals.exact || 0,
@@ -193,6 +213,7 @@ async function handleApi(request, env, url, now) {
     await db.batch([
       db.prepare('DELETE FROM predictions WHERE user_id = ?1').bind(tgUser.id),
       db.prepare('DELETE FROM friends WHERE user_id = ?1 OR friend_id = ?1').bind(tgUser.id),
+      db.prepare('DELETE FROM owned_characters WHERE user_id = ?1').bind(tgUser.id),
       db.prepare('DELETE FROM users WHERE id = ?1').bind(tgUser.id)
     ]);
     return json({ deleted: true });
@@ -218,6 +239,40 @@ async function handleApi(request, env, url, now) {
        WHERE p.user_id = ?1 ORDER BY m.utc_date DESC, m.id DESC LIMIT 100`
     ).bind(tgUser.id).all();
     return json({ items: results.map((m) => matchOut(m, env, now)) });
+  }
+
+  // Магазин персонажей.
+  if (path === '/api/shop' && method === 'GET') {
+    return json(await shopState(db, tgUser.id));
+  }
+
+  if (path === '/api/shop/buy' && method === 'POST') {
+    const body = await request.json().catch(() => ({}));
+    const ch = characterById(body.id);
+    if (!ch) return error(404, 'no_character', 'Такого персонажа нет');
+    const owned = await ownedSet(db, tgUser.id);
+    if (owned.has(ch.id)) return json(await shopState(db, tgUser.id));
+    // Сначала «бронируем» персонажа: повторный запрос не спишет монеты дважды.
+    const claim = await db.prepare(`INSERT OR IGNORE INTO owned_characters (user_id, character_id, bought_at, price)
+      VALUES (?1, ?2, ?3, ?4)`).bind(tgUser.id, ch.id, nowIso(now), ch.price).run();
+    if (!claim.meta.changes) return json(await shopState(db, tgUser.id));
+    const paid = await db.prepare('UPDATE users SET coins = coins - ?1, character = ?2 WHERE id = ?3 AND coins >= ?1')
+      .bind(ch.price, ch.id, tgUser.id).run();
+    if (!paid.meta.changes) {
+      await db.prepare('DELETE FROM owned_characters WHERE user_id = ?1 AND character_id = ?2').bind(tgUser.id, ch.id).run();
+      return error(409, 'not_enough', 'Не хватает монет');
+    }
+    return json(await shopState(db, tgUser.id));
+  }
+
+  if (path === '/api/shop/select' && method === 'POST') {
+    const body = await request.json().catch(() => ({}));
+    const ch = characterById(body.id);
+    if (!ch) return error(404, 'no_character', 'Такого персонажа нет');
+    const owned = await ownedSet(db, tgUser.id);
+    if (!owned.has(ch.id)) return error(403, 'not_owned', 'Сначала купи этого персонажа');
+    await db.prepare('UPDATE users SET character = ?1 WHERE id = ?2').bind(ch.id, tgUser.id).run();
+    return json(await shopState(db, tgUser.id));
   }
 
   if (path === '/api/friends' && method === 'GET') {
