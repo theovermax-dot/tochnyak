@@ -561,10 +561,6 @@ function renderHero(list) {
   const open = list.filter((m) => m.open);
   const queue = open.filter((m) => !m.prediction);
   const today = list.filter((m) => dayDiff(m.utcDate) === 0 && !ENDED.includes(m.status));
-  const todayDone = today.filter((m) => m.prediction).length;
-  const progress = today.length ? `<div class="hero-progress" aria-label="Прогнозов на сегодня: ${todayDone} из ${today.length}">
-      <i style="--p:${Math.round((todayDone * 100) / today.length)}%"></i><span class="num">${todayDone}/${today.length}</span>
-    </div>` : '';
   const next = queue[0];
   if (!next) {
     const upcoming = open[0];
@@ -574,7 +570,7 @@ function renderHero(list) {
         <b>Все прогнозы сделаны</b>
         <span class="muted small">${upcoming ? `Ближайший матч ${esc(whenShort(upcoming.utcDate))}. Пока ждёшь, брось вызов другу` : 'Новые матчи скоро появятся. Пока ждёшь, брось вызов другу'}</span>
         <button type="button" class="btn btn-primary" data-go="friends">${icon('i-swords')}Вызвать друга на бой</button>
-      </div>${progress}` : '';
+      </div>` : '';
     return;
   }
   const opt = (k, top, name) => `<button type="button" class="qp" data-qp="${k}" data-id="${next.id}">
@@ -591,7 +587,7 @@ function renderHero(list) {
       <p class="hero-q">Кто победит?</p>
       <div class="qp-grid">${opt('home', 'П1', next.home.short)}${opt('draw', 'Х', 'Ничья')}${opt('away', 'П2', next.away.short)}</div>
       <button type="button" class="link hero-exact" data-match="${next.id}" data-mode="score">Точный счёт →</button>
-    </div>${progress}`;
+    </div>`;
   heroTimer = setInterval(() => {
     const el = $('hero-count');
     if (!el || state.view !== 'matches') { clearInterval(heroTimer); return; }
