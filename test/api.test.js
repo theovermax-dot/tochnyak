@@ -242,3 +242,108 @@ test('магазин: покупка за монеты, нехватка, выб
     chars.CHARACTERS.pop();
   }
 });
+
+test('бои с друзьями: вызов, скрытые прогнозы, принятие, итог без ауры и монет', async () => {
+  const env = makeEnv();
+  await call(env, '/api/me', { user: max });
+  const inHour = new Date(Date.now() + 3600000).toISOString();
+  await upsertMatches(env.DB, [rawMatch(300, inHour), rawMatch(301, inHour), rawMatch(302, inHour)]);
+  let r = await call(env, '/api/auth', { user: max, method: 'POST', body: { accept: true } });
+  const maxCode = r.data.profile.friendCode;
+  r = await call(env, '/api/auth', { user: vitya, method: 'POST', body: { accept: true } });
+  const vityaCode = r.data.profile.friendCode;
+  const stranger = { id: 3, first_name: 'Чужой' };
+  await call(env, '/api/auth', { user: stranger, method: 'POST', body: { accept: true } });
+
+  // Бой только с другом.
+  r = await call(env, '/api/battles', { user: max, method: 'POST', body: { friend: vityaCode, picks: [{ matchId: 300, home: 2, away: 1 }] } });
+  assert.equal(r.status, 403);
+  await call(env, '/api/friends', { user: vitya, method: 'POST', body: { code: maxCode } });
+
+  r = await call(env, '/api/battles', { user: max, method: 'POST', body: { friend: vityaCode, picks: [] } });
+  assert.equal(r.status, 400, 'без матчей нельзя');
+  r = await call(env, '/api/battles', { user: max, method: 'POST', body: { friend: vityaCode,
+    picks: [{ matchId: 300, home: 2, away: 1 }, { matchId: 301, home: 0, away: 0 }] } });
+  assert.equal(r.status, 200);
+  const id = r.data.id;
+
+  // Витя видит вызов, но не видит счёт Макса, пока матч открыт.
+  r = await call(env, '/api/battles', { user: vitya });
+  assert.equal(r.data.battles.length, 1);
+  assert.equal(r.data.battles[0].needsMyPicks, true);
+  assert.equal(r.data.battles[0].status, 'pending');
+  r = await call(env, `/api/battles/${id}`, { user: vitya });
+  assert.deepEqual(r.data.battle.items[0].theirs, { hidden: true });
+  assert.equal(r.data.matches.length, 2);
+
+  // Чужой бой не открыть, матч не из боя не поставить.
+  r = await call(env, `/api/battles/${id}`, { user: stranger });
+  assert.equal(r.status, 404);
+  r = await call(env, `/api/battles/${id}/picks`, { user: vitya, method: 'POST', body: { picks: [{ matchId: 302, home: 1, away: 1 }] } });
+  assert.equal(r.status, 400);
+
+  // Витя ставит свои счета и тем самым принимает бой.
+  r = await call(env, `/api/battles/${id}/picks`, { user: vitya, method: 'POST',
+    body: { picks: [{ matchId: 300, home: 1, away: 0 }, { matchId: 301, home: 2, away: 2 }] } });
+  assert.equal(r.status, 200);
+  assert.equal(r.data.battle.status, 'active');
+  r = await call(env, `/api/battles/${id}/close`, { user: vitya, method: 'POST' });
+  assert.equal(r.status, 409, 'принятый бой не отменить');
+
+  // Матчи сыграны: 2:1 и 1:1.
+  const past = new Date(Date.now() - 3 * 3600000).toISOString();
+  await env.DB.prepare("UPDATE matches SET status = 'FINISHED', home_score = 2, away_score = 1, utc_date = ?1 WHERE id = 300").bind(past).run();
+  await env.DB.prepare("UPDATE matches SET status = 'FINISHED', home_score = 1, away_score = 1, utc_date = ?1 WHERE id = 301").bind(past).run();
+
+  r = await call(env, `/api/battles/${id}`, { user: max });
+  const b = r.data.battle;
+  assert.equal(b.status, 'done');
+  assert.deepEqual(b.score, { me: 5, them: 4 }, 'Макс: точно 3 + разница 2; Витя: разница 2 + разница 2');
+  assert.equal(b.result, 'win');
+  assert.deepEqual(b.items[0].theirs, { home: 1, away: 0, pts: 2 });
+  r = await call(env, `/api/battles/${id}`, { user: vitya });
+  assert.equal(r.data.battle.result, 'lose');
+
+  // За бой ничего не начисляется.
+  await settleFinished(env.DB);
+  r = await call(env, '/api/me', { user: max });
+  assert.equal(r.data.profile.aura, 0);
+  assert.equal(r.data.profile.coins, 10, 'только 10 за друга по ссылке, за бой ничего');
+
+  // Удаление аккаунта стирает бои.
+  await call(env, '/api/me', { user: vitya, method: 'DELETE' });
+  const left = await env.DB.prepare('SELECT COUNT(*) AS n FROM battle_picks').first();
+  assert.equal(left.n, 0);
+});
+
+test('бой: соперник может отказаться, создатель — отменить', async () => {
+  const env = makeEnv();
+  await call(env, '/api/me', { user: max });
+  const inHour = new Date(Date.now() + 3600000).toISOString();
+  await upsertMatches(env.DB, [rawMatch(400, inHour)]);
+  let r = await call(env, '/api/auth', { user: max, method: 'POST', body: { accept: true } });
+  const maxCode = r.data.profile.friendCode;
+  r = await call(env, '/api/auth', { user: vitya, method: 'POST', body: { accept: true } });
+  const vityaCode = r.data.profile.friendCode;
+  await call(env, '/api/friends', { user: vitya, method: 'POST', body: { code: maxCode } });
+
+  const pick = { friend: vityaCode, picks: [{ matchId: 400, home: 1, away: 0 }] };
+  r = await call(env, '/api/battles', { user: max, method: 'POST', body: pick });
+  r = await call(env, `/api/battles/${r.data.id}/close`, { user: vitya, method: 'POST' });
+  assert.equal(r.data.status, 'declined');
+  r = await call(env, '/api/battles', { user: max });
+  assert.equal(r.data.battles[0].status, 'declined');
+
+  r = await call(env, '/api/battles', { user: max, method: 'POST', body: pick });
+  r = await call(env, `/api/battles/${r.data.id}/close`, { user: max, method: 'POST' });
+  assert.equal(r.data.status, 'cancelled');
+});
+
+test('старые адреса правил ведут в приложение', async () => {
+  const env = makeEnv();
+  for (const [path, hash] of [['/privacy.html', '#privacy'], ['/terms.html', '#terms']]) {
+    const res = await worker.fetch(new Request(`https://tochnyak.test${path}`), env);
+    assert.equal(res.status, 302);
+    assert.equal(res.headers.get('location'), `https://tochnyak.test/${hash}`);
+  }
+});

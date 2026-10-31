@@ -1,5 +1,7 @@
 // Точняк: клиент мини-аппа. Без сборки и зависимостей, только Telegram WebApp SDK.
 
+import { LEGAL } from './legal.js';
+
 const tg = window.Telegram && window.Telegram.WebApp;
 const initData = tg ? tg.initData : '';
 
@@ -24,8 +26,20 @@ const state = {
   view: 'matches',
   sheet: null,
   friendLink: null,
-  pendingRef: null
+  pendingRef: null,
+  battles: [],
+  battle: null,
+  draft: null
 };
+
+const plural = (n, [one, few, many]) => {
+  const a = Math.abs(n) % 100; const b = a % 10;
+  if (a > 10 && a < 20) return many;
+  if (b === 1) return one;
+  if (b >= 2 && b <= 4) return few;
+  return many;
+};
+const ENDED = ['FINISHED', 'CANCELLED', 'AWARDED'];
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -119,13 +133,13 @@ function syncSafeArea() {
 
 function syncBackButton() {
   if (!tg || !tg.BackButton) return;
-  const show = !$('sheet').hidden || state.view === 'shop';
+  const show = !$('sheet').hidden || SUBVIEWS[state.view];
   try { show ? tg.BackButton.show() : tg.BackButton.hide(); } catch { /* старые клиенты */ }
 }
 
 function onBack() {
   if (!$('sheet').hidden) closeSheet();
-  else if (state.view === 'shop') go('profile');
+  else if (SUBVIEWS[state.view]) go(SUBVIEWS[state.view]);
 }
 
 // ---------- Вход ----------
@@ -158,6 +172,7 @@ async function boot() {
       $('login-name').textContent = me.firstName || 'Игрок';
       $('login-avatar').textContent = initials(me.firstName);
       showGate('gate-login');
+      openLegalFromHash();
       return;
     }
     await enterApp(me.profile);
@@ -182,8 +197,13 @@ $('login-btn').addEventListener('click', async () => {
     $('login-error').hidden = false;
     haptic('error');
   } finally {
-    btn.disabled = false;
+    btn.disabled = !$('consent').checked;
   }
+});
+
+$('consent').addEventListener('change', () => {
+  $('login-btn').disabled = !$('consent').checked;
+  haptic('select');
 });
 
 $('retry-btn').addEventListener('click', boot);
@@ -193,8 +213,23 @@ async function enterApp(profile) {
   renderTop();
   $('gate').hidden = true;
   $('app').hidden = false;
-  go(location.hash === '#profile' ? 'profile' : 'matches');
+  const battle = /^#battle-([a-z0-9]{10})$/.exec(location.hash);
+  if (battle) openBattle(battle[1]);
+  else go(location.hash === '#profile' ? 'profile' : 'matches');
+  openLegalFromHash();
+  clearHash();
   if (state.pendingRef) acceptInvite(state.pendingRef);
+  loadBattles();
+}
+
+function clearHash() {
+  try { history.replaceState(null, '', location.pathname + location.search); } catch { /* не страшно */ }
+}
+
+function openLegalFromHash() {
+  const h = location.hash;
+  if (h === '#terms' || h === '#legal') openLegal('terms');
+  if (h === '#privacy') openLegal('privacy');
 }
 
 async function acceptInvite(code) {
@@ -216,12 +251,15 @@ function renderTop() {
 
 // ---------- Навигация ----------
 
-const VIEWS = ['matches', 'my', 'friends', 'rating', 'profile', 'shop'];
+const VIEWS = ['matches', 'my', 'friends', 'rating', 'profile', 'shop', 'battle', 'battle-new'];
+// Вложенные экраны и куда с них возвращаться.
+const SUBVIEWS = { shop: 'profile', battle: 'friends', 'battle-new': 'friends' };
 
 function go(view) {
+  if (!$('sheet').hidden) closeSheet();
   state.view = view;
   for (const v of VIEWS) $(`view-${v}`).hidden = v !== view;
-  const tab = view === 'shop' ? 'profile' : view;
+  const tab = SUBVIEWS[view] || view;
   document.querySelectorAll('.tabbar button').forEach((b) => {
     if (b.dataset.go === tab) b.setAttribute('aria-current', 'page');
     else b.removeAttribute('aria-current');
@@ -230,7 +268,7 @@ function go(view) {
   syncBackButton();
   if (view === 'matches') loadMatches();
   if (view === 'my') loadMy();
-  if (view === 'friends') loadFriends();
+  if (view === 'friends') { loadFriends(); loadBattles(); }
   if (view === 'rating') loadRating();
   if (view === 'profile') loadProfile();
   if (view === 'shop') loadShop();
@@ -242,6 +280,19 @@ function setSelected(attr, value) {
 
 document.addEventListener('click', (e) => {
   const t = e.target;
+  const legal = t.closest('[data-legal]');
+  if (legal) { e.preventDefault(); openLegal(legal.dataset.legal); return; }
+  if (t.closest('[data-econ]')) { openEcon(); return; }
+  const st = t.closest('[data-st]');
+  if (st) { stepPick(st.dataset.st); return; }
+  const draft = t.closest('[data-draft]');
+  if (draft) { toggleDraft(Number(draft.dataset.draft)); return; }
+  const challenge = t.closest('[data-challenge]');
+  if (challenge) { newBattle(challenge.dataset.challenge, challenge.dataset.name); return; }
+  const battleEl = t.closest('[data-battle]');
+  if (battleEl) { haptic('light'); openBattle(battleEl.dataset.battle); return; }
+  const bact = t.closest('[data-bact]');
+  if (bact) { battleAction(bact.dataset.bact); return; }
   const goEl = t.closest('[data-go]');
   if (goEl) { haptic('light'); go(goEl.dataset.go); return; }
   const chip = t.closest('[data-league]');
@@ -321,7 +372,8 @@ async function loadMatches() {
 }
 
 function renderMatches() {
-  const all = state.matches;
+  // Сыгранные матчи тут не нужны: итоги лежат во вкладке «Мои → Сыграны».
+  const all = state.matches.filter((m) => !ENDED.includes(m.status));
   const present = LEAGUE_ORDER.filter((code) => all.some((m) => m.competition === code));
   if (state.league !== 'ALL' && !present.includes(state.league)) state.league = 'ALL';
 
@@ -586,6 +638,7 @@ async function loadFriends() {
         <span class="avatar avatar-sm" aria-hidden="true">${esc(initials(r.name))}</span>
         <span class="lb-name">${r.isMe ? 'Ты' : esc(r.name)}</span>
         <span class="lb-pts num">${r.pts}</span>
+        ${r.isMe ? '<span class="fight-btn fight-btn-ghost" aria-hidden="true"></span>' : `<button type="button" class="fight-btn" data-challenge="${esc(r.code)}" data-name="${esc(r.name)}" aria-label="Бой с ${esc(r.name)}">${icon('i-swords')}Бой</button>`}
         ${r.isMe ? '<span class="lb-act"></span>' : `<button type="button" class="icon-btn icon-btn-flat lb-act" data-friend="${esc(r.code)}" data-name="${esc(r.name)}" aria-label="Убрать ${esc(r.name)} из друзей">${icon('i-x')}</button>`}
       </div>`).join('')}</div>`;
   } catch (err) {
@@ -689,8 +742,8 @@ async function loadProfile() {
       <button type="button" class="dude-btn" data-go="shop">${icon('i-bag')}Магазин</button>
     </div>
     <div class="profile-name"><b>${esc(p.firstName || 'Игрок')}</b>
-      <span class="profile-wallet"><span class="stat-chip"><span class="coin" aria-hidden="true"></span><span class="num">${p.coins || 0}</span></span>
-      <span class="stat-chip"><svg class="ic ic-aura" aria-hidden="true"><use href="#i-target"/></svg><span class="num">${p.aura}</span></span></span></div>
+      <button type="button" class="profile-wallet" data-econ aria-label="Что такое монеты и аура"><span class="stat-chip"><span class="coin" aria-hidden="true"></span><span class="num">${p.coins || 0}</span></span>
+      <span class="stat-chip"><svg class="ic ic-aura" aria-hidden="true"><use href="#i-target"/></svg><span class="num">${p.aura}</span></span><svg class="ic ic-info" aria-hidden="true"><use href="#i-info"/></svg></button></div>
     <div class="strip strip-flat">
       <span><b class="num">${p.weekAura}</b><span>за неделю</span></span>
       <span><b class="num">${p.exactHits}</b><span>точняков</span></span>
@@ -700,17 +753,71 @@ async function loadProfile() {
   mountSpinners();
 }
 
-$('rules-btn').addEventListener('click', () => {
-  const rows = [['Точный счёт', '+10', '+5'], ['Разница мячей', '+6', '+3'], ['Исход', '+3', '+2'], ['Обе забьют / нет', '+1', ''], ['Тотал 2,5', '+1', ''], ['Редкий исход', '×1,5–×2', ''], ['Друг по твоей ссылке', '', '+10']];
-  $('sheet-meta').innerHTML = '<span class="league-tag">Аура и монеты</span>';
-  $('sheet-body').innerHTML = `<div class="glass list-card">${['<div class="rule-row rule-head"><span></span><span>аура</span><span>монеты</span></div>'].concat(rows.map(([a, b, c]) => `<div class="rule-row"><span>${a}</span><b class="num">${b}</b><b class="num coin-val">${c}</b></div>`)).join('')}</div>
-    <p class="sheet-foot">Считается основное время. Приём закрывается за 5 минут до матча.</p>
-    <a class="btn btn-glass" href="/terms.html">Все правила</a>`;
-  state.sheet = { rules: true };
+// ---------- Окна: аура и монеты, правила ----------
+
+function openPanel(meta, body, sheetState) {
+  $('sheet-meta').innerHTML = meta;
+  $('sheet-body').innerHTML = body;
+  state.sheet = sheetState;
+  const wasHidden = $('sheet').hidden;
   $('sheet').hidden = false;
+  if (wasHidden) haptic('light');
+  $('sheet').querySelector('.sheet-panel').scrollTop = 0;
   syncBackButton();
-  haptic('light');
-});
+}
+
+const EARN = [
+  ['Точный счёт', '+10', '+5'],
+  ['Разница мячей', '+6', '+3'],
+  ['Только исход', '+3', '+2'],
+  ['Обе забьют / нет', '+1', ''],
+  ['Тотал 2,5', '+1', ''],
+  ['Редкий исход', '×1,5–×2', ''],
+  ['Друг по твоей ссылке', '', '+10']
+];
+
+function openEcon() {
+  const p = state.profile || { aura: 0, coins: 0 };
+  const inShop = state.view === 'shop';
+  openPanel('<span class="league-tag">Аура и монеты</span>', `
+    <div class="econ">
+      <div class="econ-card econ-aura">
+        <div class="econ-top"><span class="econ-ic"><svg class="ic" aria-hidden="true"><use href="#i-target"/></svg></span><b>Аура</b><span class="num econ-val">${p.aura.toLocaleString('ru-RU')}</span></div>
+        <p>Очки за точность. По ауре строится рейтинг недели и всего времени: чем точнее прогнозы, тем выше ты среди друзей и всех игроков.</p>
+        <span class="econ-note">Никогда не тратится</span>
+      </div>
+      <div class="econ-card econ-coins">
+        <div class="econ-top"><span class="econ-ic"><span class="coin" aria-hidden="true"></span></span><b>Монеты</b><span class="num econ-val">${(p.coins || 0).toLocaleString('ru-RU')}</span></div>
+        <p>Валюта для магазина: на монеты покупаешь новых персонажей. На рейтинг не влияют.</p>
+        <span class="econ-note">Не покупаются за деньги и не выводятся</span>
+      </div>
+    </div>
+    <div class="glass list-card">${['<div class="rule-row rule-head"><span>Как заработать</span><span>аура</span><span>монеты</span></div>']
+      .concat(EARN.map(([a, b, c]) => `<div class="rule-row"><span>${a}</span><b class="num">${b}</b><b class="num coin-val">${c}</b></div>`)).join('')}</div>
+    <p class="sheet-foot">Считается основное время. Приём прогнозов закрывается за 5 минут до матча.</p>
+    ${inShop ? '' : `<button type="button" class="btn btn-primary" data-go="shop">${icon('i-bag')}В магазин</button>`}
+    <button type="button" class="btn btn-glass" data-legal="terms">Все правила</button>`, { econ: true });
+}
+
+function openLegal(tab) {
+  const key = tab === 'privacy' ? 'privacy' : 'terms';
+  const doc = LEGAL[key];
+  const atGate = !$('gate').hidden;
+  openPanel('<span class="league-tag">Документы</span>', `
+    <div class="glass segmented" role="tablist">
+      <button type="button" role="tab" data-legal="terms" aria-selected="${key === 'terms'}">Правила</button>
+      <button type="button" role="tab" data-legal="privacy" aria-selected="${key === 'privacy'}">Конфиденциальность</button>
+    </div>
+    <article class="doc"><h3>${esc(doc.title)}</h3>${doc.html}</article>
+    <button type="button" class="btn ${atGate ? 'btn-primary' : 'btn-glass'}" data-close${atGate ? ' data-agree' : ''}>${atGate ? 'Понятно, принимаю' : 'Закрыть'}</button>`, { legal: key });
+}
+
+// «Понятно, принимаю» в окне правил на экране входа ставит галочку за игрока.
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('[data-agree]')) return;
+  $('consent').checked = true;
+  $('login-btn').disabled = false;
+}, true);
 
 function confirmDialog(text) {
   return new Promise((resolve) => {
@@ -730,6 +837,9 @@ $('delete-btn').addEventListener('click', async () => {
     state.profile = null;
     state.matches = [];
     state.my = [];
+    state.battles = [];
+    $('consent').checked = false;
+    $('login-btn').disabled = true;
     $('login-name').textContent = tg && tg.initDataUnsafe && tg.initDataUnsafe.user ? tg.initDataUnsafe.user.first_name : 'Игрок';
     showGate('gate-login');
     toast('Аккаунт удалён');
@@ -781,7 +891,7 @@ function renderShop() {
     </button>`);
   for (let k = 0; k < SOON_SLOTS; k += 1) {
     cards.push(`<div class="glass shop-card soon" aria-label="Скоро новый персонаж">
-      <img src="/chars/tochnyak/front.webp" alt="" loading="lazy">
+      <span class="silhouette" aria-hidden="true"></span>
       <span class="shop-card-name">Скоро</span>
       <span class="shop-card-price">${icon('i-lock')}</span>
     </div>`);
@@ -804,6 +914,305 @@ async function shopAction(action, id) {
   } catch (err) {
     haptic('error');
     toast(err.message);
+  }
+}
+
+
+// ---------- Бои с друзьями ----------
+// Двое ставят свои счета на одни и те же матчи. На интерес: аура и монеты за бой не начисляются.
+
+const BATTLE_MAX = 10;
+const BATTLE_RULE = 'Точный счёт 3 · разница 2 · исход 1. На интерес: аура и монеты не начисляются.';
+
+async function loadBattles() {
+  try {
+    const data = await api('/api/battles');
+    state.battles = data.battles;
+  } catch { return; }
+  $('tab-dot').hidden = !state.battles.some((b) => b.needsMyPicks);
+  if (state.view === 'friends') renderBattles();
+}
+
+function battleLabel(b) {
+  if (b.status === 'done') {
+    if (b.result === 'win') return ['Победа', 'win'];
+    if (b.result === 'lose') return ['Поражение', 'lose'];
+    return ['Ничья', 'draw'];
+  }
+  if (b.status === 'declined') return [b.role === 'creator' ? 'Отказался' : 'Ты отказался', 'mute'];
+  if (b.status === 'cancelled') return ['Отменён', 'mute'];
+  if (b.status === 'expired') return ['Не состоялся', 'mute'];
+  if (b.needsMyPicks) return [b.status === 'pending' ? 'Тебя вызвали' : 'Поставь счёт', 'hot'];
+  if (b.status === 'pending') return ['Ждём ответа', 'mute'];
+  return ['Идёт', 'live'];
+}
+
+function renderBattles() {
+  const list = state.battles;
+  if (!list.length) {
+    $('battles-list').innerHTML = `<div class="glass battle-promo">
+      <span class="battle-promo-ic">${icon('i-swords')}</span>
+      <span><b>Бой с другом</b><span class="muted small">Выберите матчи, поставьте разные счета и посмотрите, кто точнее. Нажми «Бой» рядом с другом.</span></span>
+    </div>`;
+    return;
+  }
+  $('battles-list').innerHTML = `<section class="day">
+    <h3 class="day-head"><span>Бои</span><span class="day-count num">${list.length}</span></h3>
+    <div class="glass list-card">${list.map((b) => {
+      const [label, cls] = battleLabel(b);
+      const scored = b.status === 'done' || b.decided > 0;
+      const sub = b.status === 'done' ? `${b.total} ${plural(b.total, ['матч', 'матча', 'матчей'])} сыграно`
+        : `${b.total} ${plural(b.total, ['матч', 'матча', 'матчей'])}${b.decided ? ` · сыграно ${b.decided}` : ''}`;
+      return `<button type="button" class="battle-row" data-battle="${esc(b.id)}">
+        <span class="avatar avatar-sm" aria-hidden="true">${esc(initials(b.opponent.name))}</span>
+        <span class="battle-row-main"><b>${esc(b.opponent.name)}</b><span>${esc(sub)}</span></span>
+        ${scored ? `<span class="battle-row-score num">${b.score.me}:${b.score.them}</span>` : ''}
+        <span class="bstate bstate-${cls}">${label}</span>
+      </button>`;
+    }).join('')}</div>
+  </section>`;
+}
+
+// Маленький степпер счёта: ctx d — черновик нового боя, b — прогнозы в открытом бою.
+function miniStep(ctx, id, side, value, name) {
+  return `<span class="mstep">
+    <button type="button" data-st="${ctx}:${id}:${side}:-1" aria-label="${esc(name)}: на гол меньше">−</button>
+    <b class="num">${value}</b>
+    <button type="button" data-st="${ctx}:${id}:${side}:1" aria-label="${esc(name)}: на гол больше">+</button>
+  </span>`;
+}
+
+function stepPick(spec) {
+  const [ctx, id, side, delta] = spec.split(':');
+  const map = ctx === 'd' ? state.draft && state.draft.picks : state.battle && state.battle.edit;
+  const p = map && map.get(Number(id));
+  if (!p) return;
+  p[side] = Math.max(0, Math.min(15, p[side] + Number(delta)));
+  haptic('select');
+  if (ctx === 'd') renderDraft(); else renderBattle();
+}
+
+// Новый бой: выбор матчей и свои счета.
+async function newBattle(code, name) {
+  haptic('light');
+  state.draft = { code, name, picks: new Map() };
+  go('battle-new');
+  $('bn-list').innerHTML = '<div class="glass empty"><span class="spinner" aria-hidden="true"></span></div>';
+  renderDraft();
+  try {
+    const data = await api('/api/matches');
+    state.matches = data.matches;
+  } catch (err) {
+    $('bn-list').innerHTML = `<div class="glass empty"><b>Матчи не загрузились</b>${esc(err.message)}</div>`;
+    return;
+  }
+  renderDraft();
+}
+
+function toggleDraft(id) {
+  const d = state.draft;
+  if (!d) return;
+  if (d.picks.has(id)) d.picks.delete(id);
+  else if (d.picks.size >= BATTLE_MAX) { toast(`В бою максимум ${BATTLE_MAX} матчей`); haptic('error'); return; }
+  else d.picks.set(id, { home: 1, away: 0 });
+  haptic('select');
+  renderDraft();
+}
+
+function draftRow(m, p) {
+  const team = (side) => `<span class="prow-team">${crest(m[side])}<b>${esc(m[side].short)}</b>${p ? miniStep('d', m.id, side, p[side], m[side].short) : ''}</span>`;
+  return `<div class="prow${p ? ' on' : ''}"${p ? '' : ` data-draft="${m.id}" role="button" tabindex="0" aria-label="${esc(`Добавить ${m.home.short} — ${m.away.short}`)}"`}>
+    <button type="button" class="prow-tick" data-draft="${m.id}" aria-pressed="${Boolean(p)}" aria-label="${p ? 'Убрать матч' : 'Добавить матч'}">${icon('i-check')}</button>
+    <span class="prow-teams">${team('home')}${team('away')}</span>
+    ${p ? '' : `<span class="prow-time"><b class="num">${timeFmt.format(new Date(m.utcDate))}</b><span>${esc(league(m))}</span></span>`}
+  </div>`;
+}
+
+function renderDraft() {
+  const d = state.draft;
+  if (!d) return;
+  $('bn-friend').innerHTML = `<div class="glass versus-chip">
+    <span class="avatar avatar-sm" aria-hidden="true">${esc(initials(state.profile && state.profile.firstName))}</span><b>Ты</b>
+    <span class="vs-mark">${icon('i-swords')}</span>
+    <b>${esc(d.name)}</b><span class="avatar avatar-sm" aria-hidden="true">${esc(initials(d.name))}</span>
+  </div>
+  <p class="hint">Отметь до ${BATTLE_MAX} матчей и поставь свои счета. ${esc(d.name)} поставит свои, а после матчей посмотрим, кто точнее. ${BATTLE_RULE}</p>`;
+  const n = d.picks.size;
+  $('bn-count').textContent = `${n} из ${BATTLE_MAX}`;
+  $('bn-send').disabled = !n;
+  $('bn-send').innerHTML = n ? `${icon('i-swords')}Бросить вызов · <span class="num">${n}</span>` : 'Выбери матчи';
+  if (!state.matches.length) return;
+  const open = state.matches.filter((m) => m.open);
+  if (!open.length) {
+    $('bn-list').innerHTML = '<div class="glass empty"><b>Сейчас нет матчей для боя</b>Загляни, когда появятся новые</div>';
+    return;
+  }
+  const groups = [];
+  for (const m of open) {
+    const label = dayLabel(m.utcDate);
+    if (!groups.length || groups[groups.length - 1].label !== label) groups.push({ label, items: [] });
+    groups[groups.length - 1].items.push(m);
+  }
+  $('bn-list').innerHTML = groups.map((g) => `<section class="day">
+    <h3 class="day-head"><span>${esc(g.label)}</span><span class="day-count">МСК</span></h3>
+    <div class="glass list-card">${g.items.map((m) => draftRow(m, d.picks.get(m.id))).join('')}</div>
+  </section>`).join('');
+}
+
+$('bn-send').addEventListener('click', async () => {
+  const d = state.draft;
+  if (!d || !d.picks.size) return;
+  const btn = $('bn-send');
+  btn.disabled = true;
+  try {
+    const picks = [...d.picks].map(([matchId, p]) => ({ matchId, home: p.home, away: p.away }));
+    const res = await api('/api/battles', { method: 'POST', body: { friend: d.code, picks } });
+    haptic('success');
+    toast(`Вызов отправлен: ${d.name}`);
+    state.draft = null;
+    openBattle(res.id);
+    loadBattles();
+  } catch (err) {
+    haptic('error');
+    toast(err.message);
+    btn.disabled = false;
+    if (err.code === 'locked') newBattle(d.code, d.name);
+  }
+});
+
+// Открытый бой.
+async function openBattle(id) {
+  go('battle');
+  $('battle-body').innerHTML = '<div class="glass empty"><span class="spinner" aria-hidden="true"></span></div>';
+  try {
+    setBattle(await api(`/api/battles/${encodeURIComponent(id)}`));
+    renderBattle();
+  } catch (err) {
+    $('battle-body').innerHTML = `<div class="glass empty"><b>Бой не открылся</b>${esc(err.message)}</div>`;
+  }
+}
+
+function setBattle(data) {
+  const b = data.battle;
+  const canEdit = ['pending', 'active'].includes(b.status);
+  const edit = new Map();
+  if (canEdit) {
+    for (const it of b.items) {
+      if (it.open) edit.set(it.matchId, it.mine ? { home: it.mine.home, away: it.mine.away } : { home: 1, away: 0 });
+    }
+  }
+  state.battle = { battle: b, matches: data.matches, edit };
+}
+
+function battleNote(b) {
+  const name = esc(b.opponent.name);
+  if (b.status === 'pending' && b.role === 'creator') return `Ждём, когда ${name} примет бой и поставит свои счета.`;
+  if (b.status === 'pending') return `${name} вызывает тебя. Поставь свои счета и прими бой.`;
+  if (b.status === 'active') return b.decided ? `Сыграно ${b.decided} из ${b.total}.` : 'Бой принят. Ждём матчи.';
+  if (b.status === 'done') return b.result === 'win' ? 'Ты оказался точнее.' : b.result === 'lose' ? `${name} оказался точнее.` : 'Одинаково точно.';
+  if (b.status === 'declined') return b.role === 'creator' ? `${name} отказался от боя.` : 'Ты отказался от этого боя.';
+  return 'Матчи начались раньше, чем бой приняли.';
+}
+
+function battleItem(it, m, b, edit) {
+  const e = edit.get(m.id);
+  const finished = m.status === 'FINISHED' && m.score;
+  let head;
+  if (LIVE.includes(m.status)) head = `<span class="live-sub"><i class="dot"></i>идёт${m.score ? ` · <span class="num">${m.score.home}:${m.score.away}</span>` : ''}</span>`;
+  else if (finished) head = `<span>матч окончен · <b class="num">${m.score.home}:${m.score.away}</b></span>`;
+  else if (m.status === 'POSTPONED') head = '<span>перенесён</span>';
+  else if (m.status === 'CANCELLED') head = '<span>отменён</span>';
+  else head = `<span>${esc(whenShort(m.utcDate))}</span>`;
+
+  const cell = (v) => `<b class="num pickv">${v}</b>`;
+  const mine = (side) => (e ? miniStep('b', m.id, side, e[side], m[side].short) : cell(it.mine ? it.mine[side] : '—'));
+  const t = it.theirs;
+  let theirs;
+  if (t && t.hidden) theirs = `<span class="bg-lock" title="Откроется, когда закроется приём">${icon('i-lock')}<span>скрыт</span></span>`;
+  else if (t) theirs = `<span class="bg-c2 bg-r2">${cell(t.home)}</span><span class="bg-c2 bg-r3">${cell(t.away)}</span>`;
+  else theirs = `<span class="bg-lock bg-none">${it.open ? 'ждём' : '—'}</span>`;
+  const exact = (x) => Boolean(finished && x && x.home === m.score.home && x.away === m.score.away);
+  const pts = (x) => (x && x.pts != null
+    ? `<span class="bpts${x.pts > 0 ? ' hit' : ''}${exact(x) ? ' exact' : ''} num">${exact(x) ? 'точно ' : ''}+${x.pts}</span>` : '');
+  const showPts = finished && ((it.mine && it.mine.pts != null) || (t && !t.hidden && t.pts != null));
+  return `<div class="brow">
+    <div class="brow-head"><span class="league-tag">${esc(league(m))}</span>${head}</div>
+    <div class="bgrid${e ? ' editing' : ''}">
+      <span class="bg-h bg-c1">Ты</span><span class="bg-h bg-c2">${esc(b.opponent.name)}</span>
+      <span class="prow-team bg-r2">${crest(m.home)}<b>${esc(m.home.short)}</b></span>
+      <span class="prow-team bg-r3">${crest(m.away)}<b>${esc(m.away.short)}</b></span>
+      <span class="bg-c1 bg-r2">${mine('home')}</span><span class="bg-c1 bg-r3">${mine('away')}</span>
+      ${theirs}
+      ${showPts ? `<span class="bg-c1 bg-r4">${pts(it.mine)}</span><span class="bg-c2 bg-r4">${t && !t.hidden ? pts(t) : ''}</span>` : ''}
+    </div>
+  </div>`;
+}
+
+function renderBattle() {
+  const sb = state.battle;
+  if (!sb) return;
+  const { battle: b, matches, edit } = sb;
+  const byId = new Map(matches.map((m) => [m.id, m]));
+  const [label, cls] = battleLabel(b);
+  const me = state.profile ? state.profile.firstName : 'Ты';
+  const dirty = b.items.some((it) => {
+    const e = edit.get(it.matchId);
+    return e && (!it.mine || it.mine.home !== e.home || it.mine.away !== e.away);
+  });
+  let save = '';
+  if (edit.size && (dirty || b.needsMyPicks)) {
+    const text = b.status === 'pending' && b.role === 'opponent' ? 'Принять бой' : 'Сохранить счета';
+    save = `<button type="button" class="btn btn-primary" data-bact="save">${icon(b.status === 'pending' ? 'i-swords' : 'i-lock')}${text}</button>`;
+  }
+  let close = '';
+  if (b.status === 'pending') close = `<button type="button" class="btn btn-ghost" data-bact="close">${b.role === 'opponent' ? 'Отказаться' : 'Отменить бой'}</button>`;
+  const big = b.status === 'done' ? `<span class="bverdict bverdict-${cls}">${label}</span>` : `<span class="bstate bstate-${cls}">${label}</span>`;
+  $('battle-body').innerHTML = `
+    <div class="glass bhero bhero-${cls}">
+      <div class="bhero-vs">
+        <span class="bside"><span class="avatar" aria-hidden="true">${esc(initials(me))}</span><b>Ты</b></span>
+        <span class="bscore num">${b.score.me}<i>:</i>${b.score.them}</span>
+        <span class="bside"><span class="avatar" aria-hidden="true">${esc(initials(b.opponent.name))}</span><b>${esc(b.opponent.name)}</b></span>
+      </div>
+      ${big}
+      <p class="bhero-note">${battleNote(b)}</p>
+    </div>
+    <p class="hint">${BATTLE_RULE} Счёт друга виден, когда на матч закрывается приём прогнозов.</p>
+    <div class="glass list-card">${b.items.map((it) => (byId.has(it.matchId) ? battleItem(it, byId.get(it.matchId), b, edit) : '')).join('')}</div>
+    ${save}${close}`;
+}
+
+async function battleAction(action) {
+  const sb = state.battle;
+  if (!sb) return;
+  const b = sb.battle;
+  if (action === 'save') {
+    const picks = [...sb.edit].map(([matchId, p]) => ({ matchId, home: p.home, away: p.away }));
+    try {
+      const res = await api(`/api/battles/${b.id}/picks`, { method: 'POST', body: { picks } });
+      const accepted = b.status === 'pending' && b.role === 'opponent';
+      setBattle(res);
+      renderBattle();
+      haptic('success');
+      toast(accepted ? 'Бой принят' : res.skipped ? 'Сохранено. Часть матчей уже закрылась' : 'Счета сохранены');
+      loadBattles();
+    } catch (err) {
+      haptic('error');
+      toast(err.message);
+      if (err.code === 'locked' || err.code === 'closed') openBattle(b.id);
+    }
+    return;
+  }
+  if (action === 'close') {
+    const ok = await confirmDialog(b.role === 'opponent' ? `Отказаться от боя с ${b.opponent.name}?` : 'Отменить бой?');
+    if (!ok) return;
+    try {
+      await api(`/api/battles/${b.id}/close`, { method: 'POST' });
+      haptic('success');
+      toast(b.role === 'opponent' ? 'Ты отказался от боя' : 'Бой отменён');
+      state.battle = null;
+      go('friends');
+    } catch (err) { toast(err.message); }
   }
 }
 
