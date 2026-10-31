@@ -26,7 +26,9 @@
     // АПЛ, Ла Лига, Серия А, Бундеслига, Лига 1, Лига чемпионов, Эредивизи.
     "COMPETITIONS": "PL,PD,SA,BL1,FL1,CL,DED",
     // За сколько минут до начала матча закрывается приём прогнозов.
-    "LOCK_MINUTES": "5"
+    "LOCK_MINUTES": "5",
+    // Адрес мини-аппа для кнопок в напоминаниях и итогах недели (расписание не знает адрес запроса).
+    "APP_URL": "https://tochnyak.theovermax.workers.dev"
   },
   "observability": { "enabled": true }
   // Секреты (BOT_TOKEN, FOOTBALL_DATA_TOKEN, WEBHOOK_SECRET) сюда НЕ пишем.

@@ -274,7 +274,7 @@ async function enterApp(profile) {
   $('app').hidden = false;
   const battle = /^#battle-([a-z0-9]{10})$/.exec(location.hash);
   if (battle) openBattle(battle[1]);
-  else go(location.hash === '#profile' ? 'profile' : location.hash === '#friends' ? 'friends' : 'matches');
+  else go({ '#profile': 'profile', '#friends': 'friends', '#rating': 'rating' }[location.hash] || 'matches');
   openLegalFromHash();
   clearHash();
   if (state.pendingRef) acceptInvite(state.pendingRef);
@@ -1354,7 +1354,8 @@ const EARN = [
   ['Обе забьют / нет', '+1', ''],
   ['Тотал 2,5', '+1', ''],
   ['Редкий исход', '×1,5–×2', ''],
-  ['Друг по твоей ссылке', '', '+10']
+  ['Друг по твоей ссылке', '', '+10'],
+  ['Первое место недели', '', '+10']
 ];
 
 function openEcon() {
@@ -1511,7 +1512,7 @@ function setBadge(n) {
   b.hidden = !n;
 }
 
-const NOTICE_ICON = { battle_invite: 'i-swords', battle_accepted: 'i-swords', battle_declined: 'i-swords', friend_added: 'i-user-plus', friend_joined: 'i-user-plus' };
+const NOTICE_ICON = { battle_invite: 'i-swords', battle_accepted: 'i-swords', battle_declined: 'i-swords', friend_added: 'i-user-plus', friend_joined: 'i-user-plus', week_winner: 'i-chart' };
 
 function agoText(iso) {
   const min = Math.round((Date.now() - Date.parse(iso)) / 60000);
@@ -1554,6 +1555,7 @@ document.addEventListener('click', (e) => {
   const battle = /^#battle-([a-z0-9]{10})$/.exec(link);
   if (battle) openBattle(battle[1]);
   else if (link === '#friends') go('friends');
+  else if (link === '#rating') go('rating');
   else closeSheet();
 });
 

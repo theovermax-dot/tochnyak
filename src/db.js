@@ -103,6 +103,11 @@ const SCHEMA = [
     admin_msg_id INTEGER PRIMARY KEY,
     user_chat_id INTEGER NOT NULL,
     created_at TEXT NOT NULL
+  )`,
+  // Матчи, по которым бот уже напомнил «через час закрывается приём». Чтобы не слать дважды.
+  `CREATE TABLE IF NOT EXISTS reminders_sent (
+    match_id INTEGER PRIMARY KEY,
+    sent_at TEXT NOT NULL
   )`
 ];
 
@@ -121,7 +126,9 @@ const COLUMNS = [
   // Режим боя: outcome — на победу (П1 / Х / П2), score — на точный счёт.
   "ALTER TABLE battles ADD COLUMN mode TEXT NOT NULL DEFAULT 'score'",
   // Ссылка на аватарку из Telegram (обновляется при каждом входе).
-  'ALTER TABLE users ADD COLUMN photo_url TEXT'
+  'ALTER TABLE users ADD COLUMN photo_url TEXT',
+  // 1 — бот присылает напоминания о матчах и итоги недели, 0 — игрок отключил их командой /mute.
+  'ALTER TABLE users ADD COLUMN notify INTEGER NOT NULL DEFAULT 1'
 ];
 
 async function migrate(db) {

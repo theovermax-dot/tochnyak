@@ -8,12 +8,13 @@ import { COINS } from './scoring.js';
 import { CHARACTERS, DEFAULT_CHARACTER, characterById } from './characters.js';
 import { teamName } from './teams.js';
 import { profileStats } from './stats.js';
+import { weekStartIso } from './week.js';
+import { runBotJobs } from './jobs.js';
 import { BATTLE_ID, createBattle, savePicks, closeBattle, listBattles, getBattle, deleteUserBattles } from './battles.js';
 
 const MAX_GOALS = 15;
 const MAX_FRIENDS = 300;
 const FRIEND_CODE = /^[a-z0-9]{8}$/;
-const MSK_OFFSET = 3 * 3600000;
 
 const json = (data, status = 200) => new Response(JSON.stringify(data), {
   status,
@@ -21,13 +22,7 @@ const json = (data, status = 200) => new Response(JSON.stringify(data), {
 });
 const error = (status, code, message) => json({ error: code, message }, status);
 
-// Начало недели рейтинга: понедельник 00:00 по Москве.
-export function weekStartIso(now = Date.now()) {
-  const msk = new Date(now + MSK_OFFSET);
-  const dayFromMonday = (msk.getUTCDay() + 6) % 7;
-  const mondayMsk = Date.UTC(msk.getUTCFullYear(), msk.getUTCMonth(), msk.getUTCDate() - dayFromMonday);
-  return new Date(mondayMsk - MSK_OFFSET).toISOString();
-}
+export { weekStartIso };
 
 function lockMs(env) {
   return Number(env.LOCK_MINUTES || 5) * 60000;
@@ -677,6 +672,16 @@ async function handleBot(request, env, url) {
     }
   } else if (text.startsWith('/help')) {
     await botApi(env.BOT_TOKEN, 'sendMessage', { chat_id: msg.chat.id, text: 'Напиши вопрос или идею одним сообщением прямо сюда, ответим в этом чате.' });
+  } else if (text.startsWith('/mute') || text.startsWith('/unmute')) {
+    // Напоминания о матчах и итоги недели: выключить или включить обратно.
+    const on = text.startsWith('/unmute');
+    await ensureSchema(env.DB);
+    await env.DB.prepare('UPDATE users SET notify = ?1 WHERE id = ?2').bind(on ? 1 : 0, msg.chat.id).run();
+    await botApi(env.BOT_TOKEN, 'sendMessage', {
+      chat_id: msg.chat.id,
+      text: on ? 'Готово, напоминания о матчах и итоги недели снова включены.'
+        : 'Готово, напоминания и итоги недели больше не придут. Включить обратно: /unmute'
+    });
   } else if (!text.startsWith('/')) {
     await ensureSchema(env.DB);
     const row = await env.DB.prepare("SELECT value FROM meta WHERE key = 'admin_chat'").first();
@@ -782,7 +787,9 @@ async function handleSetup(env, url, now) {
       { command: 'start', description: 'Открыть Точняк' },
       { command: 'privacy', description: 'Политика конфиденциальности' },
       { command: 'delete', description: 'Как удалить аккаунт и данные' },
-      { command: 'help', description: 'Написать в поддержку' }
+      { command: 'help', description: 'Написать в поддержку' },
+      { command: 'mute', description: 'Выключить напоминания' },
+      { command: 'unmute', description: 'Включить напоминания' }
     ]
   });
   results.sync = await syncAndSettle(env, now);
@@ -818,6 +825,10 @@ export default {
   },
 
   async scheduled(event, env, ctx) {
-    ctx.waitUntil(ensureSchema(env.DB).then(() => syncAndSettle(env)));
+    // Сначала матчи и аура, потом сообщения бота. Ошибка синхронизации не отменяет напоминания.
+    ctx.waitUntil(ensureSchema(env.DB)
+      .then(() => syncAndSettle(env))
+      .catch((err) => console.error('sync', err))
+      .then(() => runBotJobs(env)));
   }
 };

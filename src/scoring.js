@@ -38,7 +38,8 @@ export function bonusPoints(pred, result) {
 
 // Монеты для гардероба: отдельная валюта, примерно вдвое меньше ауры. Рейтинг от них не зависит.
 // winOnly — прогноз «просто на исход» без счёта: награда меньше, чем за исход в прогнозе на счёт.
-export const COINS = { exact: 5, diff: 3, outcome: 2, friendJoined: 10, winOnly: 1 };
+// weekWinner — первое место в недельном рейтинге (при равенстве получают все лидеры).
+export const COINS = { exact: 5, diff: 3, outcome: 2, friendJoined: 10, winOnly: 1, weekWinner: 10 };
 export function coinsFor(base) {
   if (base >= POINTS.exact) return COINS.exact;
   if (base >= POINTS.diff) return COINS.diff;
