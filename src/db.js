@@ -86,7 +86,18 @@ const SCHEMA = [
     away INTEGER NOT NULL,
     updated_at TEXT NOT NULL,
     PRIMARY KEY (battle_id, user_id, match_id)
-  )`
+  )`,
+  // Уведомления в приложении: вызовы на бой, ответы, новые друзья.
+  `CREATE TABLE IF NOT EXISTS notifications (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    kind TEXT NOT NULL,
+    text TEXT NOT NULL,
+    link TEXT,
+    created_at TEXT NOT NULL,
+    read_at TEXT
+  )`,
+  `CREATE INDEX IF NOT EXISTS notifications_by_user ON notifications (user_id, id)`
 ];
 
 // Колонки, добавленные после первого запуска. ALTER падает, если колонка уже есть, это нормально.
@@ -98,7 +109,9 @@ const COLUMNS = [
   "ALTER TABLE users ADD COLUMN character TEXT NOT NULL DEFAULT 'tochnyak'",
   'ALTER TABLE users ADD COLUMN phone TEXT',
   // Версия регистрации, которую игрок прошёл. Старые аккаунты получают 1 и проходят регистрацию заново.
-  'ALTER TABLE users ADD COLUMN reg_version INTEGER NOT NULL DEFAULT 1'
+  'ALTER TABLE users ADD COLUMN reg_version INTEGER NOT NULL DEFAULT 1',
+  // score — точный счёт, outcome — только исход (П1 / ничья / П2).
+  "ALTER TABLE predictions ADD COLUMN kind TEXT NOT NULL DEFAULT 'score'"
 ];
 
 async function migrate(db) {

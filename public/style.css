@@ -575,3 +575,34 @@ input { -webkit-user-select: text; user-select: text; }
 .avatar-lg { width: 64px; height: 64px; font-size: 22px; }
 .btn-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .battle-promo { padding: 12px 14px; }
+
+/* Колокольчик */
+.top-right { display: flex; align-items: center; gap: 8px; }
+.bell { position: relative; width: 40px; height: 40px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; color: var(--ink); padding: 0; }
+.bell .ic { width: 20px; height: 20px; }
+.bell-badge { position: absolute; top: -3px; right: -3px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; background: var(--crimson-hi); color: #fff; font-size: 10px; font-style: normal; font-weight: 800; display: inline-flex; align-items: center; justify-content: center; box-shadow: 0 0 0 2px #0a040a; }
+.notice { width: 100%; display: flex; align-items: center; gap: 12px; padding: 12px 14px; background: none; border: none; border-bottom: 1px solid var(--row-line); text-align: left; color: var(--ink); }
+.notice:last-child { border-bottom: none; }
+.notice.unread { background: rgba(197, 3, 55, 0.1); }
+.notice-ic { width: 36px; height: 36px; flex: none; border-radius: 12px; display: inline-flex; align-items: center; justify-content: center; background: rgba(197, 3, 55, 0.2); color: #ffb3c6; }
+.notice-ic .ic { width: 18px; height: 18px; }
+.notice-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; font-size: 14px; font-weight: 700; line-height: 1.35; }
+.notice-at { font-size: 12px; font-weight: 600; color: var(--faint); }
+.notice-dot { width: 8px; height: 8px; flex: none; border-radius: 50%; background: var(--crimson-hi); }
+
+/* Вызов на бой при входе */
+.invite-pop { display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; padding: 6px 0 4px; }
+.invite-pop b { font-size: 18px; }
+.invite-pop .muted { font-size: 14px; line-height: 1.45; }
+.invite-pop-vs { display: flex; align-items: center; gap: 14px; margin-bottom: 6px; }
+.invite-pop-ic { width: 40px; height: 40px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: var(--crimson); color: #fff; box-shadow: 0 8px 22px rgba(197, 3, 55, 0.5); }
+.invite-pop-ic .ic { width: 20px; height: 20px; }
+
+/* Прогноз на исход */
+.out-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.out-btn { min-height: 76px; border-radius: 18px; border: 1px solid var(--glass-line); background: rgba(255, 255, 255, 0.05); color: var(--ink); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; padding: 8px 6px; }
+.out-btn b { font-size: 20px; }
+.out-btn span { max-width: 100%; font-size: 12px; font-weight: 700; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.out-btn[aria-pressed="true"] { background: var(--crimson); border-color: var(--crimson-hi); box-shadow: 0 10px 24px rgba(197, 3, 55, 0.4); }
+.out-btn[aria-pressed="true"] span { color: #ffd0dc; }
+.out-btn:active { transform: scale(0.97); }

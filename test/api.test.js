@@ -83,7 +83,7 @@ test('полный круг: прогноз, закрытие, финал, ау�
 
   r = await call(env, '/api/matches', { user: max });
   const m100 = r.data.matches.find((m) => m.id === 100);
-  assert.deepEqual(m100.prediction, { home: 2, away: 1, points: null });
+  assert.deepEqual(m100.prediction, { home: 2, away: 1, points: null, kind: 'score' });
   assert.equal(m100.open, true);
   assert.equal(r.data.matches.find((m) => m.id === 101).open, false);
 
@@ -181,7 +181,7 @@ test('мои прогнозы и эмблемы клубов', async () => {
   assert.equal(r.data.items.length, 1);
   assert.equal(r.data.items[0].home.crest, '/crest/57.png?v=2');
   assert.equal(r.data.items[0].away.crest, null, 'чужие адреса не пропускаем');
-  assert.deepEqual(r.data.items[0].prediction, { home: 1, away: 0, points: null });
+  assert.deepEqual(r.data.items[0].prediction, { home: 1, away: 0, points: null, kind: 'score' });
   const bad = await worker.fetch(new Request('https://tochnyak.test/crest/a%2Fb.png'), env);
   assert.equal(bad.status, 404);
 });
@@ -420,4 +420,57 @@ test('приглашение сразу открывает мини-апп, ко
   assert.equal(r.data.link, `https://t.me/tochnyak_bot?startapp=f_${code}`);
   const page = await worker.fetch(new Request(`https://tochnyak.test/i/${code}`), env);
   assert.match(await page.text(), new RegExp(`startapp=f_${code}`));
+});
+
+test('прогноз на исход: малая награда, без бонусов', async () => {
+  const env = makeEnv();
+  await call(env, '/api/me', { user: max });
+  const inHour = new Date(Date.now() + 3600000).toISOString();
+  await upsertMatches(env.DB, [rawMatch(500, inHour), rawMatch(501, inHour)]);
+  await call(env, '/api/auth', { user: max, method: 'POST', body: { accept: true } });
+  let r = await call(env, '/api/predictions', { user: max, method: 'POST', body: { matchId: 500, kind: 'outcome', pick: 'nope' } });
+  assert.equal(r.status, 400);
+  r = await call(env, '/api/predictions', { user: max, method: 'POST', body: { matchId: 500, kind: 'outcome', pick: 'home' } });
+  assert.deepEqual(r.data.prediction, { matchId: 500, home: 1, away: 0, kind: 'outcome' });
+  await call(env, '/api/predictions', { user: max, method: 'POST', body: { matchId: 501, kind: 'outcome', pick: 'draw' } });
+  const past = new Date(Date.now() - 3 * 3600000).toISOString();
+  await env.DB.prepare("UPDATE matches SET status = 'FINISHED', home_score = 1, away_score = 0, utc_date = ?1 WHERE id = 500").bind(past).run();
+  await env.DB.prepare("UPDATE matches SET status = 'FINISHED', home_score = 2, away_score = 1, utc_date = ?1 WHERE id = 501").bind(past).run();
+  await settleFinished(env.DB);
+  r = await call(env, '/api/me', { user: max });
+  assert.equal(r.data.profile.aura, 2, 'исход угадан на 500: +2, на 501 мимо, бонусов за 1:0 нет');
+  assert.equal(r.data.profile.coins, 1);
+  assert.equal(r.data.profile.exactHits, 0, 'угаданный исход не считается точняком');
+  r = await call(env, '/api/my', { user: max });
+  assert.equal(r.data.items.find((m) => m.id === 500).prediction.kind, 'outcome');
+});
+
+test('уведомления: вызов на бой, принятие, прочитано', async () => {
+  const env = makeEnv();
+  await call(env, '/api/me', { user: max });
+  const inHour = new Date(Date.now() + 3600000).toISOString();
+  await upsertMatches(env.DB, [rawMatch(600, inHour)]);
+  let r = await call(env, '/api/auth', { user: max, method: 'POST', body: { accept: true } });
+  const maxCode = r.data.profile.friendCode;
+  r = await call(env, '/api/auth', { user: vitya, method: 'POST', body: { accept: true } });
+  const vityaCode = r.data.profile.friendCode;
+  await call(env, '/api/friends', { user: vitya, method: 'POST', body: { code: maxCode } });
+  r = await call(env, '/api/notifications', { user: max });
+  assert.equal(r.data.items[0].kind, 'friend_joined');
+
+  r = await call(env, '/api/battles', { user: max, method: 'POST', body: { friend: vityaCode, picks: [{ matchId: 600, home: 1, away: 0 }] } });
+  const id = r.data.id;
+  r = await call(env, '/api/me', { user: vitya });
+  assert.equal(r.data.profile.unread, 1);
+  r = await call(env, '/api/notifications', { user: vitya });
+  assert.equal(r.data.items[0].kind, 'battle_invite');
+  assert.equal(r.data.items[0].link, `#battle-${id}`);
+  assert.match(r.data.items[0].text, /Макс вызывает тебя на бой · 1 матч/);
+  await call(env, '/api/notifications/read', { user: vitya, method: 'POST' });
+  r = await call(env, '/api/me', { user: vitya });
+  assert.equal(r.data.profile.unread, 0);
+
+  await call(env, `/api/battles/${id}/picks`, { user: vitya, method: 'POST', body: { picks: [{ matchId: 600, home: 0, away: 0 }] } });
+  r = await call(env, '/api/notifications', { user: max });
+  assert.equal(r.data.items[0].kind, 'battle_accepted');
 });

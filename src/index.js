@@ -86,7 +86,7 @@ export function welcomeCaption(inviter) {
     '🏆 Недельный рейтинг и лига друзей',
     '🛍 Монеты на новых персонажей',
     '',
-    'Вход через Telegram, без регистрации. Игра бесплатная: без ставок и без денег.'
+    'Вход в один шаг через Telegram. Игра бесплатная: без ставок и без денег.'
   ].join('\n');
 }
 
@@ -106,7 +106,7 @@ function matchOut(m, env, now) {
     home: { name: m.home_name, short: m.home_short, tla: m.home_tla, crest: crestUrl(m.home_crest) },
     away: { name: m.away_name, short: m.away_short, tla: m.away_tla, crest: crestUrl(m.away_crest) },
     score: m.home_score == null ? null : { home: m.home_score, away: m.away_score },
-    prediction: m.pred_home == null ? null : { home: m.pred_home, away: m.pred_away, points: m.pred_points }
+    prediction: m.pred_home == null ? null : { home: m.pred_home, away: m.pred_away, points: m.pred_points, kind: m.pred_kind || 'score' }
   };
 }
 
@@ -181,7 +181,7 @@ async function addFriend(db, userId, code, now, { bonus = true } = {}) {
       await db.prepare('UPDATE users SET coins = coins + ?1 WHERE id = ?2').bind(COINS.friendJoined, friend.id).run();
     }
   }
-  return { added, name: friend.first_name || 'Игрок' };
+  return { added, name: friend.first_name || 'Игрок', friendId: friend.id };
 }
 
 // Фоновая задача: Worker не ждёт её, но и не обрывает.
@@ -191,6 +191,15 @@ function later(ctx, task) {
 }
 
 // Сообщение игроку от бота с кнопкой в мини-апп. Если он не запускал бота, Telegram просто откажет.
+// Уведомление в приложении (колокольчик). link — куда вести по нажатию: #battle-<id>, #friends.
+async function addNotice(db, userId, kind, text, link, now = Date.now()) {
+  await db.prepare('INSERT INTO notifications (user_id, kind, text, link, created_at) VALUES (?1, ?2, ?3, ?4, ?5)')
+    .bind(userId, kind, text, link || null, nowIso(now)).run();
+  // Храним последние 50 на человека.
+  await db.prepare(`DELETE FROM notifications WHERE user_id = ?1 AND id NOT IN
+    (SELECT id FROM notifications WHERE user_id = ?1 ORDER BY id DESC LIMIT 50)`).bind(userId).run();
+}
+
 function notify(env, chatId, text, button, webUrl) {
   if (!env.BOT_TOKEN) return null;
   return botApi(env.BOT_TOKEN, 'sendMessage', {
@@ -229,7 +238,8 @@ async function loadProfile(db, userId, now) {
     exactHits: totals.exact || 0,
     joinedAt: user.created_at,
     friendCode: await ensureFriendCode(db, userId),
-    friendsCount: (await db.prepare('SELECT COUNT(*) AS n FROM friends WHERE user_id = ?1').bind(userId).first()).n
+    friendsCount: (await db.prepare('SELECT COUNT(*) AS n FROM friends WHERE user_id = ?1').bind(userId).first()).n,
+    unread: (await db.prepare('SELECT COUNT(*) AS n FROM notifications WHERE user_id = ?1 AND read_at IS NULL').bind(userId).first()).n
   };
 }
 
@@ -280,6 +290,7 @@ async function handleApi(request, env, url, now, ctx) {
     await deleteUserBattles(db, tgUser.id);
     await db.batch([
       db.prepare('DELETE FROM predictions WHERE user_id = ?1').bind(tgUser.id),
+      db.prepare('DELETE FROM notifications WHERE user_id = ?1').bind(tgUser.id),
       db.prepare('DELETE FROM friends WHERE user_id = ?1 OR friend_id = ?1').bind(tgUser.id),
       db.prepare('DELETE FROM owned_characters WHERE user_id = ?1').bind(tgUser.id),
       db.prepare('DELETE FROM users WHERE id = ?1').bind(tgUser.id)
@@ -291,7 +302,7 @@ async function handleApi(request, env, url, now, ctx) {
     const from = new Date(now - 2 * 86400000).toISOString();
     const to = new Date(now + 8 * 86400000).toISOString();
     const { results } = await db.prepare(
-      `SELECT m.*, p.home AS pred_home, p.away AS pred_away, p.points AS pred_points
+      `SELECT m.*, p.home AS pred_home, p.away AS pred_away, p.points AS pred_points, p.kind AS pred_kind
        FROM matches m LEFT JOIN predictions p ON p.match_id = m.id AND p.user_id = ?1
        WHERE m.utc_date BETWEEN ?2 AND ?3 AND m.status NOT IN ('CANCELLED')
        ORDER BY m.utc_date, m.id`
@@ -302,7 +313,7 @@ async function handleApi(request, env, url, now, ctx) {
   // Мои прогнозы: будущие и сыгранные, свежие сверху.
   if (path === '/api/my' && method === 'GET') {
     const { results } = await db.prepare(
-      `SELECT m.*, p.home AS pred_home, p.away AS pred_away, p.points AS pred_points
+      `SELECT m.*, p.home AS pred_home, p.away AS pred_away, p.points AS pred_points, p.kind AS pred_kind
        FROM predictions p JOIN matches m ON m.id = p.match_id
        WHERE p.user_id = ?1 ORDER BY m.utc_date DESC, m.id DESC LIMIT 100`
     ).bind(tgUser.id).all();
@@ -352,6 +363,7 @@ async function handleApi(request, env, url, now, ctx) {
     const body = await request.json().catch(() => ({}));
     const res = await createBattle(db, { userId: tgUser.id, friendCode: body.friend, picks: body.picks, now, lockMs: lockMs(env) });
     if (res.error) return error(...res.error);
+    await addNotice(db, res.opponentId, 'battle_invite', `${tgUser.firstName || 'Друг'} вызывает тебя на бой · ${body.picks.length} ${body.picks.length === 1 ? 'матч' : body.picks.length < 5 ? 'матча' : 'матчей'}`, `#battle-${res.id}`, now);
     later(ctx, () => notify(env, res.opponentId,
       `⚔️ <b>${escHtml(tgUser.firstName || 'Друг')} вызывает тебя на бой</b>\n\nМатчей в бою: ${body.picks.length}. Ставь свои счета, пока матчи не начались. Победит тот, кто окажется точнее.`,
       'Принять бой', `${url.origin}/#battle-${res.id}`));
@@ -373,6 +385,7 @@ async function handleApi(request, env, url, now, ctx) {
       const res = await savePicks(db, { battleId, userId: tgUser.id, picks: body.picks, now, lockMs: lockMs(env) });
       if (res.error) return error(...res.error);
       if (res.accepted) {
+        await addNotice(db, res.creatorId, 'battle_accepted', `${tgUser.firstName || 'Друг'} принял твой бой`, `#battle-${battleId}`, now);
         later(ctx, () => notify(env, res.creatorId,
           `🔥 <b>${escHtml(tgUser.firstName || 'Друг')} принял бой</b>\n\nПрогнозы закрыты до начала матчей. Итог узнаешь после финального свистка.`,
           'Открыть бой', `${url.origin}/#battle-${battleId}`));
@@ -383,6 +396,7 @@ async function handleApi(request, env, url, now, ctx) {
     if (action === 'close' && method === 'POST') {
       const res = await closeBattle(db, { battleId, userId: tgUser.id });
       if (res.error) return error(...res.error);
+      if (res.status === 'declined') await addNotice(db, res.creatorId, 'battle_declined', `${tgUser.firstName || 'Друг'} отказался от боя`, `#battle-${battleId}`, now);
       return json(res);
     }
   }
@@ -398,6 +412,7 @@ async function handleApi(request, env, url, now, ctx) {
     const res = await addFriend(db, tgUser.id, code, now, { bonus: false });
     if (res.error) return error(...res.error);
     if (res.added) {
+      await addNotice(db, found.id, 'friend_added', `${tgUser.firstName || 'Игрок'} добавил тебя в друзья`, '#friends', now);
       later(ctx, () => notify(env, found.id,
         `👋 <b>${escHtml(tgUser.firstName || 'Игрок')}</b> добавил тебя в друзья в Точняке. Теперь вы в одной таблице и можете вызывать друг друга на бой.`,
         'Открыть друзей', `${url.origin}/#friends`));
@@ -406,6 +421,18 @@ async function handleApi(request, env, url, now, ctx) {
   }
 
   // Отвязать номер.
+  // Уведомления.
+  if (path === '/api/notifications' && method === 'GET') {
+    const { results } = await db.prepare(
+      'SELECT id, kind, text, link, created_at, read_at FROM notifications WHERE user_id = ?1 ORDER BY id DESC LIMIT 50'
+    ).bind(tgUser.id).all();
+    return json({ items: results.map((n) => ({ id: n.id, kind: n.kind, text: n.text, link: n.link, at: n.created_at, read: Boolean(n.read_at) })) });
+  }
+  if (path === '/api/notifications/read' && method === 'POST') {
+    await db.prepare('UPDATE notifications SET read_at = ?1 WHERE user_id = ?2 AND read_at IS NULL').bind(nowIso(now), tgUser.id).run();
+    return json({ ok: true });
+  }
+
   if (path === '/api/me/phone' && method === 'DELETE') {
     await db.prepare('UPDATE users SET phone = NULL WHERE id = ?1').bind(tgUser.id).run();
     return json({ ok: true });
@@ -465,7 +492,8 @@ async function handleApi(request, env, url, now, ctx) {
     const body = await request.json().catch(() => ({}));
     const res = await addFriend(db, tgUser.id, body.code, now);
     if (res.error) return error(...res.error);
-    return json(res);
+    if (res.added && res.friendId) await addNotice(db, res.friendId, 'friend_joined', `${tgUser.firstName || 'Игрок'} пришёл по твоей ссылке и теперь в друзьях`, '#friends', now);
+    return json({ added: res.added, name: res.name, self: res.self });
   }
 
   if (path === '/api/friends' && method === 'DELETE') {
@@ -481,7 +509,15 @@ async function handleApi(request, env, url, now, ctx) {
 
   if (path === '/api/predictions' && method === 'POST') {
     const body = await request.json().catch(() => ({}));
-    const { matchId, home, away } = body;
+    const { matchId } = body;
+    let { home, away } = body;
+    // Прогноз только на исход: храним как условный счёт 1:0, 0:0 или 0:1 и kind = outcome.
+    const kind = body.kind === 'outcome' ? 'outcome' : 'score';
+    if (kind === 'outcome') {
+      const OUT = { home: [1, 0], draw: [0, 0], away: [0, 1] };
+      if (!Number.isInteger(matchId) || !OUT[body.pick]) return error(400, 'bad_prediction', 'Выбери П1, ничью или П2');
+      [home, away] = OUT[body.pick];
+    }
     const valid = (n) => Number.isInteger(n) && n >= 0 && n <= MAX_GOALS;
     if (!Number.isInteger(matchId) || !valid(home) || !valid(away)) {
       return error(400, 'bad_prediction', 'Счёт должен быть от 0 до 15');
@@ -491,11 +527,11 @@ async function handleApi(request, env, url, now, ctx) {
     const open = now < Date.parse(match.utc_date) - lockMs(env) && ['SCHEDULED', 'TIMED'].includes(match.status);
     if (!open) return error(409, 'locked', 'Приём прогнозов на этот матч закрыт');
     const at = nowIso(now);
-    await db.prepare(`INSERT INTO predictions (user_id, match_id, home, away, created_at, updated_at)
-      VALUES (?1, ?2, ?3, ?4, ?5, ?5)
-      ON CONFLICT(user_id, match_id) DO UPDATE SET home = excluded.home, away = excluded.away, updated_at = excluded.updated_at
-      WHERE predictions.settled_at IS NULL`).bind(tgUser.id, matchId, home, away, at).run();
-    return json({ saved: true, prediction: { matchId, home, away } });
+    await db.prepare(`INSERT INTO predictions (user_id, match_id, home, away, kind, created_at, updated_at)
+      VALUES (?1, ?2, ?3, ?4, ?6, ?5, ?5)
+      ON CONFLICT(user_id, match_id) DO UPDATE SET home = excluded.home, away = excluded.away, kind = excluded.kind, updated_at = excluded.updated_at
+      WHERE predictions.settled_at IS NULL`).bind(tgUser.id, matchId, home, away, at, kind).run();
+    return json({ saved: true, prediction: { matchId, home, away, kind } });
   }
 
   if (path === '/api/leaderboard' && method === 'GET') {

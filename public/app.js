@@ -41,6 +41,13 @@ const plural = (n, [one, few, many]) => {
 };
 const ENDED = ['FINISHED', 'CANCELLED', 'AWARDED'];
 
+// Прогноз на исход хранится как 1:0 / 0:0 / 0:1 с kind = outcome.
+const isOutcome = (p) => Boolean(p && p.kind === 'outcome');
+const outcomeKey = (p) => (p.home > p.away ? 'home' : p.home < p.away ? 'away' : 'draw');
+const OUT_LABEL = { home: 'П1', draw: 'Х', away: 'П2' };
+const predText = (p) => (isOutcome(p) ? OUT_LABEL[outcomeKey(p)] : `${p.home}:${p.away}`);
+const isExact = (p, m) => Boolean(p && !isOutcome(p) && m.score && p.home === m.score.home && p.away === m.score.away);
+
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const initials = (name) => (String(name || '?').trim().split(/\s+/).map((p) => p[0]).join('').slice(0, 2) || '?').toUpperCase();
@@ -265,8 +272,19 @@ async function enterApp(profile) {
   openLegalFromHash();
   clearHash();
   if (state.pendingRef) acceptInvite(state.pendingRef);
-  loadBattles();
+  loadBattles().then(() => { if (!battle) showIncomingBattle(); });
 }
+
+// Вернулся в приложение из другого чата — проверяем новые вызовы и уведомления.
+document.addEventListener('visibilitychange', async () => {
+  if (document.hidden || !state.profile || $('app').hidden) return;
+  try {
+    const me = await api('/api/me');
+    if (me.registered) { state.profile = me.profile; renderTop(); }
+  } catch { /* не страшно */ }
+  await loadBattles();
+  showIncomingBattle();
+});
 
 function clearHash() {
   try { history.replaceState(null, '', location.pathname + location.search); } catch { /* не страшно */ }
@@ -293,6 +311,7 @@ function renderTop() {
   $('top-coins').textContent = (p.coins || 0).toLocaleString('ru-RU');
   $('shop-coins').textContent = (p.coins || 0).toLocaleString('ru-RU');
   $('top-avatar').textContent = initials(p.firstName);
+  setBadge(p.unread || 0);
 }
 
 // ---------- Навигация ----------
@@ -482,15 +501,15 @@ function matchTag(m) {
   const p = m.prediction;
   if (m.status === 'FINISHED' && m.score) {
     if (!p) return '<span class="tag tag-none">—</span>';
-    if (p.points == null) return `<span class="tag tag-wait num">${p.home}:${p.away}</span>`;
-    return `<span class="tag ${p.points > 0 ? 'tag-hit' : 'tag-miss'}"><span class="num">${p.home}:${p.away}</span><b>+${p.points}</b></span>`;
+    if (p.points == null) return `<span class="tag tag-wait num">${predText(p)}</span>`;
+    return `<span class="tag ${p.points > 0 ? 'tag-hit' : 'tag-miss'}"><span class="num">${predText(p)}</span><b>+${p.points}</b></span>`;
   }
   if (m.open) {
-    if (p) return `<span class="tag tag-pred num">${p.home}:${p.away}</span>`;
+    if (p) return `<span class="tag tag-pred num">${predText(p)}</span>`;
     return `<span class="mr-cta"><span class="tag tag-open">Прогноз</span><span class="mr-prize">${prizeInline()}</span></span>`;
   }
   if (m.status === 'POSTPONED') return '<span class="tag tag-none">—</span>';
-  return p ? `<span class="tag tag-wait num">${p.home}:${p.away}</span>` : `<span class="tag tag-none">${icon('i-lock')}</span>`;
+  return p ? `<span class="tag tag-wait num">${predText(p)}</span>` : `<span class="tag tag-none">${icon('i-lock')}</span>`;
 }
 
 function matchRow(m) {
@@ -515,7 +534,7 @@ function renderHero(list) {
         <span class="hero-time"><span class="num">${timeFmt.format(new Date(next.utcDate))}</span><span class="muted small">${esc(dayLabel(next.utcDate).toLowerCase())} · МСК</span></span>
         <span class="team">${crest(next.away, 'crest-lg')}<span>${esc(next.away.short)}</span></span>
       </div>
-      <button type="button" class="btn btn-primary" data-match="${next.id}">${p ? `Мой прогноз <span class="num">${p.home}:${p.away}</span>` : 'Вангануть счёт'}</button>
+      <button type="button" class="btn btn-primary" data-match="${next.id}">${p ? `Мой прогноз <span class="num">${predText(p)}</span>` : 'Вангануть счёт'}</button>
       <p class="hero-prize">За точный счёт ${prizeInline()}</p>
     </div>`;
 }
@@ -524,7 +543,8 @@ function renderHero(list) {
 
 function openSheet(m) {
   const p = m.prediction;
-  state.sheet = { match: m, home: p ? p.home : 1, away: p ? p.away : 0 };
+  const out = isOutcome(p);
+  state.sheet = { match: m, mode: out ? 'outcome' : 'score', home: p && !out ? p.home : 1, away: p && !out ? p.away : 0, pick: out ? outcomeKey(p) : null };
   $('sheet-meta').innerHTML = `<span class="league-tag">${esc(league(m))}</span><span>${esc(whenShort(m.utcDate))}</span>`;
   renderSheet();
   $('sheet').hidden = false;
@@ -552,11 +572,31 @@ function renderSheet() {
   if (!m.open) { renderResultSheet(m); return; }
 
   const left = Date.parse(m.lockAt) - Date.now();
+  const modes = `<div class="glass segmented" role="tablist" aria-label="Тип прогноза">
+      <button type="button" role="tab" data-pmode="score" aria-selected="${s.mode === 'score'}">Точный счёт</button>
+      <button type="button" role="tab" data-pmode="outcome" aria-selected="${s.mode === 'outcome'}">Только победа</button>
+    </div>`;
+  if (s.mode === 'outcome') {
+    const opt = (key, top, name) => `<button type="button" class="out-btn" data-out="${key}" aria-pressed="${s.pick === key}">
+      <b class="num">${top}</b><span>${esc(name)}</span></button>`;
+    $('sheet-body').innerHTML = `
+      ${teamsHead(m, '<span class="vs-dash" aria-hidden="true">vs</span>')}
+      ${modes}
+      <div class="out-grid" role="group" aria-label="Исход матча">
+        ${opt('home', 'П1', m.home.short)}${opt('draw', 'Х', 'Ничья')}${opt('away', 'П2', m.away.short)}
+      </div>
+      <button type="button" id="save-btn" class="btn btn-primary"${s.pick ? '' : ' disabled'}>${icon('i-lock')}${s.pick ? `Залочить <span class="num">${OUT_LABEL[s.pick]}</span>` : 'Выбери исход'}</button>
+      <p class="hero-prize">За угаданный исход <span class="prize-a num">+2${icon('i-target')}</span><span class="prize-c num">+1<span class="coin" aria-hidden="true"></span></span></p>
+      <p class="sheet-foot">Точный счёт приносит до 6 раз больше. Приём закроется через <span class="num">${untilText(left)}</span></p>
+      <p id="sheet-error" class="error center" role="alert" hidden></p>`;
+    return;
+  }
   const outcome = s.home > s.away ? `П1 · ${m.home.short}` : s.home < s.away ? `П2 · ${m.away.short}` : 'Ничья';
   const btts = s.home > 0 && s.away > 0 ? 'Обе забьют' : 'Не обе';
   const total = s.home + s.away > 2 ? 'ТБ 2,5' : 'ТМ 2,5';
   $('sheet-body').innerHTML = `
     ${teamsHead(m, '<span class="vs-dash" aria-hidden="true">vs</span>')}
+    ${modes}
     <div class="score-grid">
       ${stepper('home', s.home, m.home.short)}
       ${stepper('away', s.away, m.away.short)}
@@ -591,9 +631,9 @@ function renderResultSheet(m) {
   let mine;
   if (!p) mine = '<div class="mine mine-empty">Ты не делал прогноз</div>';
   else {
-    const exact = p.points != null && m.score && p.home === m.score.home && p.away === m.score.away;
+    const exact = p.points != null && isExact(p, m);
     const pts = p.points == null ? '<span class="muted">ждём финал</span>' : `<b class="num ${p.points > 0 ? 'pts-hit' : ''}">+${p.points}</b>`;
-    mine = `<div class="mine${exact ? ' mine-exact' : ''}"><span class="muted small">Мой прогноз</span><span class="num mine-score">${p.home}:${p.away}</span>${pts}${exact ? '<span class="stamp">ТОЧНЯК!</span>' : ''}</div>`;
+    mine = `<div class="mine${exact ? ' mine-exact' : ''}"><span class="muted small">${isOutcome(p) ? 'Мой исход' : 'Мой прогноз'}</span><span class="num mine-score">${predText(p)}</span>${pts}${exact ? '<span class="stamp">ТОЧНЯК!</span>' : ''}</div>`;
   }
   $('sheet-body').innerHTML = `${teamsHead(m, center)}${status}${mine}
     <button type="button" class="btn btn-glass" data-close>Закрыть</button>`;
@@ -611,6 +651,10 @@ $('sheet').addEventListener('click', (e) => {
     renderSheet();
     return;
   }
+  const pmode = e.target.closest('[data-pmode]');
+  if (pmode) { s.mode = pmode.dataset.pmode; haptic('select'); renderSheet(); return; }
+  const out = e.target.closest('[data-out]');
+  if (out) { s.pick = out.dataset.out; haptic('select'); renderSheet(); return; }
   const quick = e.target.closest('[data-quick]');
   if (quick) {
     const [h, a] = quick.dataset.quick.split(':').map(Number);
@@ -627,12 +671,15 @@ async function savePrediction() {
   const btn = $('save-btn');
   btn.disabled = true;
   try {
-    await api('/api/predictions', { method: 'POST', body: { matchId: s.match.id, home: s.home, away: s.away } });
-    s.match.prediction = { home: s.home, away: s.away, points: null };
+    const body = s.mode === 'outcome'
+      ? { matchId: s.match.id, kind: 'outcome', pick: s.pick }
+      : { matchId: s.match.id, home: s.home, away: s.away };
+    const res = await api('/api/predictions', { method: 'POST', body });
+    s.match.prediction = { home: res.prediction.home, away: res.prediction.away, kind: res.prediction.kind, points: null };
     haptic('success');
     closeSheet();
     if (state.view === 'matches') renderMatches(); else loadMy();
-    toast(`Залочено ${s.home}:${s.away}`);
+    toast(`Залочено ${predText(s.match.prediction)}`);
   } catch (err) {
     $('sheet-error').textContent = err.message;
     $('sheet-error').hidden = false;
@@ -660,7 +707,7 @@ function isDone(m) { return m.prediction && m.prediction.points != null; }
 function renderMy() {
   const done = state.my.filter(isDone);
   const wait = state.my.filter((m) => !isDone(m)).reverse();
-  const exact = done.filter((m) => m.score && m.prediction.home === m.score.home && m.prediction.away === m.score.away).length;
+  const exact = done.filter((m) => isExact(m.prediction, m)).length;
   const hits = done.filter((m) => m.prediction.points > 0).length;
   $('my-stats').innerHTML = `<div class="glass strip">
     <span><b class="num">${exact}</b><span>точняков</span></span>
@@ -680,7 +727,7 @@ function renderMy() {
 
 function myRow(m) {
   const p = m.prediction;
-  const exact = isDone(m) && m.score && p.home === m.score.home && p.away === m.score.away;
+  const exact = isDone(m) && isExact(p, m);
   let right;
   if (isDone(m)) right = `<span class="my-pts ${p.points > 0 ? 'pts-hit' : 'pts-zero'} num">+${p.points}</span>`;
   else if (m.open) right = '<span class="tag tag-open">Изменить</span>';
@@ -688,7 +735,7 @@ function myRow(m) {
   const sub = isDone(m) ? `счёт ${m.score.home}:${m.score.away}`
     : LIVE.includes(m.status) ? (m.score ? `сейчас ${m.score.home}:${m.score.away}` : 'идёт') : whenTiny(m.utcDate);
   return `<button type="button" class="match-row" data-match="${m.id}" aria-label="${esc(`${m.home.short} — ${m.away.short}`)}">
-    <span class="pair">${crest(m.home)}<span class="mid"><span class="mid-main num">${p.home}:${p.away}</span><span class="mid-sub">${esc(sub)}</span></span>${crest(m.away)}</span>
+    <span class="pair">${crest(m.home)}<span class="mid"><span class="mid-main num">${predText(p)}</span><span class="mid-sub">${esc(sub)}</span></span>${crest(m.away)}</span>
     ${exact ? '<span class="stamp stamp-sm">ТОЧНЯК!</span>' : ''}
     ${right}
   </button>`;
@@ -961,7 +1008,8 @@ function openPanel(meta, body, sheetState) {
 const EARN = [
   ['Точный счёт', '+10', '+5'],
   ['Разница мячей', '+6', '+3'],
-  ['Только исход', '+3', '+2'],
+  ['Исход в прогнозе на счёт', '+3', '+2'],
+  ['«Только победа» угадана', '+2', '+1'],
   ['Обе забьют / нет', '+1', ''],
   ['Тотал 2,5', '+1', ''],
   ['Редкий исход', '×1,5–×2', ''],
@@ -1109,6 +1157,82 @@ async function shopAction(action, id) {
   }
 }
 
+
+// ---------- Уведомления ----------
+
+function setBadge(n) {
+  const b = $('bell-badge');
+  b.textContent = n > 9 ? '9+' : String(n);
+  b.hidden = !n;
+}
+
+const NOTICE_ICON = { battle_invite: 'i-swords', battle_accepted: 'i-swords', battle_declined: 'i-swords', friend_added: 'i-user-plus', friend_joined: 'i-user-plus' };
+
+function agoText(iso) {
+  const min = Math.round((Date.now() - Date.parse(iso)) / 60000);
+  if (min < 1) return 'только что';
+  if (min < 60) return `${min} мин назад`;
+  const h = Math.round(min / 60);
+  if (h < 24) return `${h} ч назад`;
+  return shortDayFmt.format(new Date(iso));
+}
+
+async function openNotices() {
+  openPanel('<span class="league-tag">Уведомления</span>', '<div class="glass empty"><span class="spinner" aria-hidden="true"></span></div>', { notices: true });
+  try {
+    const data = await api('/api/notifications');
+    if (!state.sheet || !state.sheet.notices) return;
+    $('sheet-body').innerHTML = data.items.length
+      ? `<div class="glass list-card">${data.items.map((n) => `
+          <button type="button" class="notice${n.read ? '' : ' unread'}" data-notice="${esc(n.link || '')}">
+            <span class="notice-ic">${icon(NOTICE_ICON[n.kind] || 'i-bell')}</span>
+            <span class="notice-main"><span>${esc(n.text)}</span><span class="notice-at">${esc(agoText(n.at))}</span></span>
+            ${n.read ? '' : '<i class="notice-dot" aria-label="новое"></i>'}
+          </button>`).join('')}</div>`
+      : `<div class="glass empty"><svg class="ic ic-xl" aria-hidden="true"><use href="#i-bell"/></svg><b>Пока тихо</b>Здесь появятся вызовы на бой и новые друзья</div>`;
+    if (data.items.some((n) => !n.read)) {
+      await api('/api/notifications/read', { method: 'POST' });
+      if (state.profile) state.profile.unread = 0;
+      setBadge(0);
+    }
+  } catch (err) {
+    $('sheet-body').innerHTML = `<div class="glass empty"><b>Не загрузилось</b>${esc(err.message)}</div>`;
+  }
+}
+
+$('bell-btn').addEventListener('click', () => { haptic('light'); openNotices(); });
+
+document.addEventListener('click', (e) => {
+  const n = e.target.closest('[data-notice]');
+  if (!n) return;
+  const link = n.dataset.notice;
+  const battle = /^#battle-([a-z0-9]{10})$/.exec(link);
+  if (battle) openBattle(battle[1]);
+  else if (link === '#friends') go('friends');
+  else closeSheet();
+});
+
+// Если друг кинул бой, пока тебя не было, — показываем вызов сразу при входе. Один раз за сессию на бой.
+const shownInvites = new Set();
+function showIncomingBattle() {
+  if (!$('sheet').hidden || state.view === 'battle' || state.view === 'battle-new') return;
+  const b = state.battles.find((x) => x.status === 'pending' && x.role === 'opponent' && x.needsMyPicks && !shownInvites.has(x.id));
+  if (!b) return;
+  shownInvites.add(b.id);
+  haptic('success');
+  openPanel('<span class="league-tag">Вызов на бой</span>', `
+    <div class="invite-pop">
+      <span class="invite-pop-vs">
+        <span class="avatar avatar-lg" aria-hidden="true">${esc(initials(b.opponent.name))}</span>
+        <span class="invite-pop-ic">${icon('i-swords')}</span>
+        <span class="avatar avatar-lg" aria-hidden="true">${esc(initials(state.profile && state.profile.firstName))}</span>
+      </span>
+      <b>${esc(b.opponent.name)} вызывает тебя на бой</b>
+      <span class="muted">${b.total} ${plural(b.total, ['матч', 'матча', 'матчей'])}. Поставь свои счета, пока матчи не начались. Кто точнее, тот и победил.</span>
+    </div>
+    <button type="button" class="btn btn-primary" data-battle="${esc(b.id)}">${icon('i-swords')}Открыть бой</button>
+    <button type="button" class="btn btn-ghost" data-close>Позже</button>`, { invite: b.id });
+}
 
 // ---------- Бои с друзьями ----------
 // Двое ставят свои счета на одни и те же матчи. На интерес: аура и монеты за бой не начисляются.

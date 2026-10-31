@@ -122,7 +122,7 @@ export async function closeBattle(db, { battleId, userId }) {
   if (b.status !== 'pending') return { error: [409, 'closed', 'Принятый бой уже не отменить'] };
   const status = b.opponent_id === userId ? 'declined' : 'cancelled';
   await db.prepare('UPDATE battles SET status = ?1 WHERE id = ?2').bind(status, battleId).run();
-  return { status };
+  return { status, creatorId: b.creator_id, opponentId: b.opponent_id };
 }
 
 // Собирает бой для экрана: матчи, прогнозы обоих, счёт и итог.

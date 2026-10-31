@@ -8,7 +8,7 @@
 //   от 10 до 25% ×1,5. Работает, только когда на матч есть хотя бы
 //   RARITY_MIN_PREDICTIONS прогнозов, иначе проценты ничего не значат.
 
-export const POINTS = { exact: 10, diff: 6, outcome: 3, btts: 1, total: 1 };
+export const POINTS = { exact: 10, diff: 6, outcome: 3, btts: 1, total: 1, winOnly: 2 };
 export const RARITY_MIN_PREDICTIONS = 20;
 
 export function outcomeOf(home, away) {
@@ -37,7 +37,8 @@ export function bonusPoints(pred, result) {
 }
 
 // Монеты для гардероба: отдельная валюта, примерно вдвое меньше ауры. Рейтинг от них не зависит.
-export const COINS = { exact: 5, diff: 3, outcome: 2, friendJoined: 10 };
+// winOnly — прогноз «просто на исход» без счёта: награда меньше, чем за исход в прогнозе на счёт.
+export const COINS = { exact: 5, diff: 3, outcome: 2, friendJoined: 10, winOnly: 1 };
 export function coinsFor(base) {
   if (base >= POINTS.exact) return COINS.exact;
   if (base >= POINTS.diff) return COINS.diff;
@@ -62,6 +63,11 @@ export function scoreMatch(predictions, result) {
   for (const p of predictions) counts[outcomeOf(p.home, p.away)] += 1;
 
   return predictions.map((p) => {
+    // Прогноз только на исход: 2 ауры и 1 монета, без бонусов и редкости.
+    if (p.kind === 'outcome') {
+      const hit = outcomeOf(p.home, p.away) === outcomeOf(result.home, result.away);
+      return { userId: p.userId, points: hit ? POINTS.winOnly : 0, base: hit ? POINTS.winOnly : 0, bonus: 0, multiplier: 1, coins: hit ? COINS.winOnly : 0 };
+    }
     const base = basePoints(p, result);
     const bonus = bonusPoints(p, result);
     const share = total ? counts[outcomeOf(p.home, p.away)] / total : 1;

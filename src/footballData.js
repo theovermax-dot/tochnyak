@@ -100,7 +100,7 @@ export async function settleFinished(db, now = Date.now()) {
     const claim = await db.prepare('UPDATE matches SET settled = 2 WHERE id = ?1 AND settled = 0').bind(m.id).run();
     if (!claim.meta || claim.meta.changes !== 1) continue;
     const { results: preds } = await db.prepare(
-      'SELECT user_id AS userId, home, away FROM predictions WHERE match_id = ?1'
+      'SELECT user_id AS userId, home, away, kind FROM predictions WHERE match_id = ?1'
     ).bind(m.id).all();
     const scored = scoreMatch(preds, { home: m.home_score, away: m.away_score });
     const at = nowIso(now);
