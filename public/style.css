@@ -712,3 +712,64 @@ button, a, [role="button"] { touch-action: manipulation; }
 .hero-progress { flex-direction: row; align-items: center; gap: 10px; }
 .hero-progress i { flex: 1; }
 .hero-progress span { font-size: 12px; font-weight: 800; color: var(--faint); }
+
+/* ---------- Компьютер: меню слева, экраны в две колонки, окна по центру ---------- */
+@media (min-width: 960px) {
+  #app {
+    max-width: 1240px; padding: 0 32px 48px;
+    display: grid; grid-template-columns: 236px minmax(0, 1fr); column-gap: 32px; align-items: start;
+  }
+  .topbar { grid-column: 2; margin: 0 0 14px; padding: calc(18px + var(--safe-top)) 0 14px;
+    background: rgba(8, 4, 10, 0.9); box-shadow: 0 0 0 100vmax rgba(8, 4, 10, 0.9); clip-path: inset(0 -100vmax); }
+  .view { grid-column: 2; }
+
+  /* Нижняя панель превращается в меню слева */
+  .tabbar {
+    grid-column: 1; grid-row: 1 / span 20; position: sticky; top: calc(18px + var(--safe-top)); left: auto; bottom: auto;
+    transform: none; width: auto; height: auto; margin-top: calc(18px + var(--safe-top));
+    display: flex; flex-direction: column; gap: 4px; padding: 10px; border-radius: 24px; background: rgba(12, 10, 16, 0.7);
+  }
+  .tabbar button { flex-direction: row; justify-content: flex-start; gap: 14px; height: 50px; padding: 0 16px; border-radius: 15px; font-size: 15px; font-weight: 700; }
+  .tabbar button:hover { background: rgba(255, 255, 255, 0.05); color: var(--ink); }
+  .tabbar button[aria-current="page"] { background: rgba(197, 3, 55, 0.18); }
+
+  /* Матчи: карточка матча дня слева, список справа */
+  #view-matches:not([hidden]) { display: grid; grid-template-columns: minmax(340px, 400px) minmax(0, 1fr); grid-auto-rows: auto; gap: 16px 28px; align-items: start; }
+  #hero { grid-column: 1; grid-row: 1 / span 3; position: sticky; top: calc(96px + var(--safe-top)); }
+  #league-chips { grid-column: 2; margin: 0; padding: 2px 0; flex-wrap: wrap; overflow: visible; }
+  #match-list { grid-column: 2; }
+
+  /* Друзья: бои слева, таблица справа */
+  #view-friends:not([hidden]) { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px 28px; align-items: start; }
+  #view-friends > .title { grid-column: 1 / -1; }
+  #view-friends > .invite-row { grid-column: 1 / -1; max-width: 520px; }
+  #battles-list { grid-column: 1; }
+  #view-friends > section.day { grid-column: 2; }
+
+  /* Профиль и магазин: персонаж слева, остальное справа */
+  #view-profile:not([hidden]) { display: grid; grid-template-columns: minmax(320px, 420px) minmax(0, 1fr); gap: 16px 28px; align-items: start; }
+  #profile-card { grid-row: 1 / span 2; }
+  #view-profile .tiles { grid-column: 2; }
+  #delete-btn { grid-column: 2; justify-self: start; width: auto; }
+  #view-shop:not([hidden]) { display: grid; grid-template-columns: minmax(320px, 420px) minmax(0, 1fr); gap: 16px 28px; align-items: start; }
+  #view-shop > .subhead { grid-column: 1 / -1; }
+  #shop-stage { position: sticky; top: calc(96px + var(--safe-top)); }
+  .shop-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+  /* Остальные экраны — читаемой ширины */
+  #view-my, #view-rating, #view-battle, #view-battle-new { max-width: 760px; }
+
+  /* Окна по центру */
+  .sheet { align-items: center; padding: 24px; }
+  .sheet-panel { border-radius: 28px; border-bottom: 1px solid var(--glass-line); max-height: calc(100vh - 48px); padding-bottom: 20px; width: min(540px, 100%); }
+  .dock { bottom: 20px; }
+  .toast { bottom: 32px; }
+
+  /* Наведение мышью */
+  .match-row:hover, .battle-row:hover, .lb-tap:hover, .notice:hover { background: rgba(255, 255, 255, 0.04); }
+  .qp:hover, .out-btn:hover { border-color: var(--crimson-hi); }
+  .btn:hover { filter: brightness(1.08); }
+}
+@media (min-width: 1280px) {
+  .shop-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
