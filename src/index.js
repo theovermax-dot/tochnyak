@@ -7,6 +7,7 @@ import { syncAndSettle } from './footballData.js';
 import { COINS } from './scoring.js';
 import { CHARACTERS, DEFAULT_CHARACTER, characterById } from './characters.js';
 import { teamName } from './teams.js';
+import { profileStats } from './stats.js';
 import { BATTLE_ID, createBattle, savePicks, closeBattle, listBattles, getBattle, deleteUserBattles } from './battles.js';
 
 const MAX_GOALS = 15;
@@ -246,11 +247,13 @@ async function loadProfile(db, userId, now) {
   const week = await db.prepare(
     'SELECT COALESCE(SUM(points), 0) AS pts, COUNT(*) AS n FROM predictions WHERE user_id = ?1 AND settled_at >= ?2'
   ).bind(userId, weekStart).first();
-  const totals = await db.prepare(
-    `SELECT COUNT(*) AS total,
-            SUM(CASE WHEN points >= 10 THEN 1 ELSE 0 END) AS exact
-     FROM predictions WHERE user_id = ?1 AND settled_at IS NOT NULL`
-  ).bind(userId).first();
+  const { results: settled } = await db.prepare(
+    `SELECT m.competition, p.points, p.kind, p.home, p.away, m.home_score AS hs, m.away_score AS ast
+     FROM predictions p JOIN matches m ON m.id = p.match_id
+     WHERE p.user_id = ?1 AND p.settled_at IS NOT NULL
+     ORDER BY p.settled_at DESC, p.match_id DESC LIMIT 500`
+  ).bind(userId).all();
+  const stats = profileStats(settled);
   return {
     id: user.id,
     firstName: user.first_name,
@@ -261,8 +264,10 @@ async function loadProfile(db, userId, now) {
     coins: user.coins || 0,
     character: characterById(user.character) ? user.character : DEFAULT_CHARACTER,
     weekAura: week.pts,
-    settledPredictions: totals.total || 0,
-    exactHits: totals.exact || 0,
+    settledPredictions: stats.total,
+    exactHits: stats.exact,
+    streak: stats.streak,
+    leagues: stats.leagues,
     joinedAt: user.created_at,
     friendCode: await ensureFriendCode(db, userId),
     friendsCount: (await db.prepare('SELECT COUNT(*) AS n FROM friends WHERE user_id = ?1').bind(userId).first()).n,

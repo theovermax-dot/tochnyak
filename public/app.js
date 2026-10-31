@@ -372,6 +372,8 @@ document.addEventListener('click', (e) => {
   if (draft) { toggleDraft(Number(draft.dataset.draft)); return; }
   const challenge = t.closest('[data-challenge]');
   if (challenge) { newBattle(challenge.dataset.challenge, challenge.dataset.name); return; }
+  const todayBattle = t.closest('[data-today-battle]');
+  if (todayBattle) { newBattle(todayBattle.dataset.todayBattle, todayBattle.dataset.name, true); return; }
   const battleEl = t.closest('[data-battle]');
   if (battleEl) { haptic('light'); openBattle(battleEl.dataset.battle); return; }
   const bact = t.closest('[data-bact]');
@@ -964,6 +966,82 @@ async function makeStoryImage(link) {
   return new Promise((resolve) => cv.toBlob((b) => resolve(b), 'image/png'));
 }
 
+// Итог боя для сторис и постов: счёт, вердикт и ссылка на приложение.
+async function makeBattleImage(b, link) {
+  const W = 1080; const H = 1920;
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+  const ctx = cv.getContext('2d');
+  try { await Promise.all([document.fonts.load('800 100px Unbounded'), document.fonts.load('700 40px Manrope')]); } catch { /* системный шрифт тоже ок */ }
+  const disp = "'Unbounded', 'Arial Black', sans-serif";
+  const body = "'Manrope', -apple-system, 'Segoe UI', sans-serif";
+  ctx.fillStyle = '#02060E'; ctx.fillRect(0, 0, W, H);
+  let g = ctx.createRadialGradient(W * 0.85, 0, 0, W * 0.85, 0, 1100);
+  g.addColorStop(0, 'rgba(197,3,55,0.95)'); g.addColorStop(0.45, 'rgba(197,3,55,0.3)'); g.addColorStop(1, 'rgba(2,6,14,0)');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#F5F2F4'; ctx.font = `800 64px ${disp}`; ctx.fillText('ТОЧНЯК', W / 2, 200);
+  ctx.fillStyle = 'rgba(245,242,244,0.7)'; ctx.font = `700 40px ${body}`;
+  ctx.fillText(b.mode === 'outcome' ? 'Бой на победу' : 'Бой на точный счёт', W / 2, 268);
+  const verdict = b.result === 'win' ? 'Я точнее!'
+    : b.result === 'lose' ? `${b.opponent.name.slice(0, 14)} точнее`
+      : b.status === 'done' ? 'Ничья' : 'Бой идёт';
+  ctx.fillStyle = '#FF2E63'; ctx.font = `800 84px ${disp}`; ctx.fillText(verdict, W / 2, 480);
+  ctx.fillStyle = '#F5F2F4'; ctx.font = `800 240px ${disp}`; ctx.fillText(`${b.score.me} : ${b.score.them}`, W / 2, 800);
+  ctx.font = `700 46px ${body}`; ctx.fillStyle = 'rgba(245,242,244,0.85)';
+  ctx.fillText('Ты', W * 0.27, 900); ctx.fillText(b.opponent.name.slice(0, 16), W * 0.73, 900);
+  ctx.font = `700 40px ${body}`; ctx.fillStyle = 'rgba(245,242,244,0.6)';
+  ctx.fillText(`Сыграно ${b.decided} из ${b.total} ${plural(b.total, ['матч', 'матча', 'матчей'])}`, W / 2, 980);
+  const ch = await loadImg(`/chars/${encodeURIComponent((state.profile && state.profile.character) || 'tochnyak')}/front.webp`);
+  if (ch) { const h = 600; const w = (ch.width / ch.height) * h; ctx.drawImage(ch, (W - w) / 2, 1040, w, h); }
+  ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.beginPath(); ctx.ellipse(W / 2, 1645, 200, 24, 0, 0, Math.PI * 2); ctx.fill();
+  roundRect(ctx, 90, 1700, W - 180, 130, 44);
+  ctx.fillStyle = 'rgba(255,255,255,0.08)'; ctx.fill(); ctx.strokeStyle = 'rgba(255,255,255,0.18)'; ctx.lineWidth = 2; ctx.stroke();
+  ctx.fillStyle = '#ff8fab'; ctx.font = `700 30px ${body}`; ctx.fillText('Сыграй со мной', W / 2, 1752);
+  ctx.fillStyle = '#F5F2F4'; ctx.font = `800 36px ${body}`; ctx.fillText(prettyLink(link) || 't.me/tochnyak_bot', W / 2, 1806);
+  return new Promise((resolve) => cv.toBlob((x) => resolve(x), 'image/png'));
+}
+
+async function openBattleShare() {
+  const sb = state.battle;
+  if (!sb) return;
+  haptic('light');
+  const b = sb.battle;
+  let link = '';
+  try { link = await friendLink(); } catch { /* картинка без ссылки */ }
+  const blob = await makeBattleImage(b, link);
+  if (!blob) { toast('Картинка не готова'); return; }
+  state.battleBlob = blob;
+  const url = URL.createObjectURL(blob);
+  const text = `Бой с ${b.opponent.name}: ${b.score.me}:${b.score.them}. Угадываем счёт в Точняке ${link}`.trim();
+  openPanel('<span class="league-tag">Итог боя</span>', `
+    <img class="story-prev" src="${url}" alt="Итог боя с картинкой">
+    <button type="button" class="btn btn-primary" data-battle-share="native">${icon('i-share')}Поделиться картинкой</button>
+    <div class="btn-pair">
+      <a class="btn btn-glass" href="${url}" download="tochnyak-battle.png">${icon('i-copy')}Сохранить</a>
+      <button type="button" class="btn btn-glass" data-battle-share="threads">Threads</button>
+    </div>
+    <p class="sheet-foot">Выложи картинку в сторис Instagram или в пост Threads. Для Threads текст уже скопирован.</p>`, { battleShare: true, text });
+}
+
+document.addEventListener('click', async (e) => {
+  const btn = e.target.closest('[data-battle-share]');
+  if (!btn) return;
+  const s = state.sheet || {};
+  haptic('light');
+  if (btn.dataset.battleShare === 'native') {
+    const file = new File([state.battleBlob], 'tochnyak-battle.png', { type: 'image/png' });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try { await navigator.share({ files: [file], text: s.text }); return; } catch (err) { if (err && err.name === 'AbortError') return; }
+    }
+    toast('Сохрани картинку и выложи в Instagram или Threads');
+    return;
+  }
+  if (btn.dataset.battleShare === 'threads') {
+    if (await copyText(s.text)) toast('Текст скопирован. Вставь его в Threads вместе с картинкой');
+    openExternal(`https://www.threads.net/intent/post?text=${encodeURIComponent(s.text || '')}`);
+  }
+});
+
 async function openInviteSheet() {
   haptic('light');
   let link = '';
@@ -1155,6 +1233,7 @@ function openFriend(code) {
       <span class="muted small">${r.rank} место · <span class="num">${r.pts}</span> ауры ${state.fperiod === 'week' ? 'за неделю' : 'всего'}</span>
     </div>
     <button type="button" class="btn btn-primary" data-challenge="${esc(r.code)}" data-name="${esc(r.name)}">${icon('i-swords')}Вызвать на бой</button>
+    <button type="button" class="btn btn-glass" data-today-battle="${esc(r.code)}" data-name="${esc(r.name)}">${icon('i-swords')}Бой на сегодняшние матчи</button>
     <button type="button" class="btn btn-ghost" data-unfriend="${esc(r.code)}" data-name="${esc(r.name)}">Убрать из друзей</button>`, { friend: code });
 }
 
@@ -1216,6 +1295,18 @@ async function loadProfile() {
   } catch { /* покажем то, что уже есть */ }
 }
 
+// Точность по лигам: сколько угадано из сыгранных и сколько точных счетов. Проценты не показываем.
+function leagueStatsHtml(leagues) {
+  if (!leagues || !leagues.length) return '';
+  const rows = leagues.map((l) => `<div class="rule-row">
+      <span>${esc(LEAGUES[l.competition] || l.competition)}</span>
+      <b class="num">${l.hits} из ${l.total}</b>
+      <b class="num coin-val">${l.exact} точн.</b>
+    </div>`).join('');
+  return `<h3 class="day-head"><span>Точность по лигам</span><span class="day-count">угадано</span></h3>
+    <div class="glass list-card">${rows}</div>`;
+}
+
 function renderProfile() {
   const p = state.profile;
   if (!p) return;
@@ -1232,9 +1323,10 @@ function renderProfile() {
     <div class="strip strip-flat">
       <span><b class="num">${p.weekAura}</b><span>за неделю</span></span>
       <span><b class="num">${p.exactHits}</b><span>точняков</span></span>
-      <span><b class="num">${p.settledPredictions}</b><span>сыграно</span></span>
+      <span><b class="num">${p.streak || 0}</b><span>подряд</span></span>
     </div>
-  </div>`;
+  </div>
+  ${leagueStatsHtml(p.leagues)}`;
   if (html === state.profileHtml && $('profile-card').firstChild) return;
   state.profileHtml = html;
   $('profile-card').innerHTML = html;
@@ -1586,7 +1678,8 @@ function stepPick(spec) {
 }
 
 // Новый бой: выбор матчей и свои счета.
-async function newBattle(code, name) {
+// today: сразу отмечаем все открытые матчи на сегодня, остаётся только выбрать исходы.
+async function newBattle(code, name, today = false) {
   haptic('light');
   const fr = (state.friendRows || []).find((x) => x.code === code);
   state.draft = { code, name, photo: fr ? fr.photo : null, mode: 'outcome', picks: new Map() };
@@ -1599,6 +1692,11 @@ async function newBattle(code, name) {
   } catch (err) {
     $('bn-list').innerHTML = `<div class="glass empty"><b>Матчи не загрузились</b>${esc(err.message)}</div>`;
     return;
+  }
+  if (today) {
+    const todays = state.matches.filter((m) => m.open && dayDiff(m.utcDate) === 0).slice(0, BATTLE_MAX);
+    for (const m of todays) state.draft.picks.set(m.id, draftDefault('outcome'));
+    if (!todays.length) toast('Сегодня открытых матчей нет');
   }
   renderDraft();
 }
@@ -1836,13 +1934,14 @@ function renderBattle() {
     </div>
     <p class="hint"><b class="mode-tag">${b.mode === 'outcome' ? 'На победу' : 'На точный счёт'}</b> ${BATTLE_RULES[b.mode]} Прогноз друга виден, когда на матч закрывается приём.</p>
     <div class="glass list-card">${b.items.map((it) => (byId.has(it.matchId) ? battleItem(it, byId.get(it.matchId), b, edit) : '')).join('')}</div>
-    ${save}${close}`;
+    ${save}${close}${b.decided > 0 ? `<button type="button" class="btn btn-glass" data-bact="share">${icon('i-share')}Поделиться итогом</button>` : ''}`;
 }
 
 async function battleAction(action) {
   const sb = state.battle;
   if (!sb) return;
   const b = sb.battle;
+  if (action === 'share') { openBattleShare(); return; }
   if (action === 'save') {
     const picks = [...sb.edit].filter(([, p]) => pickReady(b.mode, p)).map(([matchId, p]) => pickBody(b.mode, matchId, p));
     if (!picks.length) { toast('Выбери исход хотя бы в одном матче'); haptic('error'); return; }
