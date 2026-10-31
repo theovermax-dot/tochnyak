@@ -511,3 +511,29 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--crimson-hi); ou
 }
 .prize-line { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px; font-size: 13px; font-weight: 700; color: var(--muted); }
 .prize-line b { font-size: 13px; }
+
+/* Номер и поиск друзей */
+input { -webkit-user-select: text; user-select: text; }
+.phone-card { width: 100%; border-radius: 22px; padding: 18px; display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; }
+.phone-card b { font-size: 17px; }
+.phone-card p { margin: 0; font-size: 14px; line-height: 1.5; color: var(--muted); }
+.phone-card p b { font-size: 14px; color: var(--ink); }
+.phone-ic { width: 52px; height: 52px; border-radius: 18px; display: inline-flex; align-items: center; justify-content: center; background: rgba(197, 3, 55, 0.3); color: #ffd0dc; margin-bottom: 4px; }
+.phone-ic .ic { width: 26px; height: 26px; }
+.invite-row .btn-glass:not(.btn-square) { flex: 0 0 auto; width: auto; padding: 0 16px; }
+.invite-row .btn-primary { flex: 1; }
+.find { display: flex; flex-direction: column; gap: 10px; }
+.find-field { display: flex; align-items: center; gap: 10px; height: 54px; padding: 0 16px; border-radius: 18px; background: rgba(255, 255, 255, 0.06); border: 1px solid var(--glass-line); }
+.find-field:focus-within { border-color: var(--crimson-hi); box-shadow: 0 0 0 3px rgba(255, 46, 99, 0.18); }
+.find-field .ic { color: var(--faint); }
+.find-field input { flex: 1; min-width: 0; height: 100%; background: none; border: none; outline: none; color: var(--ink); font: inherit; font-size: 16px; font-weight: 700; }
+.find-field input::placeholder { color: var(--faint); font-weight: 600; }
+.find-msg { margin: 0; text-align: center; font-size: 14px; font-weight: 700; }
+.find-msg.ok { color: var(--green); }
+.find-msg.bad { color: #ff8fab; }
+.me-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 13px 16px; border-bottom: 1px solid var(--row-line); font-size: 14px; }
+.me-row:last-child { border-bottom: none; }
+.me-row-l { color: var(--muted); font-weight: 600; }
+.me-ok { display: inline-flex; align-items: center; gap: 4px; color: var(--green); font-weight: 800; }
+.me-ok .ic { width: 16px; height: 16px; stroke-width: 2.6; }
+.link-sm { font-size: 12px; font-weight: 700; margin-left: 6px; color: var(--faint); }

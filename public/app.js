@@ -145,7 +145,7 @@ function onBack() {
 // ---------- Вход ----------
 
 function showGate(which) {
-  for (const id of ['gate-loading', 'gate-outside', 'gate-login', 'gate-error']) $(id).hidden = id !== which;
+  for (const id of ['gate-loading', 'gate-outside', 'gate-login', 'gate-phone', 'gate-error']) $(id).hidden = id !== which;
   $('gate').hidden = false;
   $('app').hidden = true;
 }
@@ -191,7 +191,8 @@ $('login-btn').addEventListener('click', async () => {
   try {
     const res = await api('/api/auth', { method: 'POST', body: { accept: true } });
     haptic('success');
-    await enterApp(res.profile);
+    if (!res.profile.hasPhone && canRequestContact()) askPhone(res.profile);
+    else await enterApp(res.profile);
   } catch (err) {
     $('login-error').textContent = err.message;
     $('login-error').hidden = false;
@@ -208,6 +209,46 @@ $('consent').addEventListener('change', () => {
 
 $('retry-btn').addEventListener('click', boot);
 
+// ---------- Номер телефона: необязательно, чтобы друзья нашли по номеру ----------
+
+const canRequestContact = () => Boolean(tg && tg.requestContact && tg.isVersionAtLeast && tg.isVersionAtLeast('6.9'));
+
+function askPhone(profile) {
+  state.profile = profile;
+  $('phone-username').textContent = profile.username ? `@${profile.username}` : 'имени';
+  showGate('gate-phone');
+}
+
+// Telegram сам показывает окно «Поделиться номером» и присылает номер боту. Ждём, пока сервер его запишет.
+function requestPhone() {
+  return new Promise((resolve) => {
+    if (!canRequestContact()) { resolve(false); return; }
+    try {
+      tg.requestContact(async (shared) => {
+        if (!shared) { resolve(false); return; }
+        for (let i = 0; i < 8; i += 1) {
+          await new Promise((r) => setTimeout(r, 700));
+          try {
+            const me = await api('/api/me');
+            if (me.profile && me.profile.hasPhone) { state.profile = me.profile; resolve(true); return; }
+          } catch { /* ещё раз */ }
+        }
+        resolve(false);
+      });
+    } catch { resolve(false); }
+  });
+}
+
+$('phone-btn').addEventListener('click', async () => {
+  const btn = $('phone-btn');
+  btn.disabled = true;
+  const ok = await requestPhone();
+  btn.disabled = false;
+  if (ok) { haptic('success'); toast('Номер привязан'); }
+  await enterApp(state.profile);
+});
+$('phone-skip').addEventListener('click', () => enterApp(state.profile));
+
 async function enterApp(profile) {
   state.profile = profile;
   renderTop();
@@ -215,7 +256,7 @@ async function enterApp(profile) {
   $('app').hidden = false;
   const battle = /^#battle-([a-z0-9]{10})$/.exec(location.hash);
   if (battle) openBattle(battle[1]);
-  else go(location.hash === '#profile' ? 'profile' : 'matches');
+  else go(location.hash === '#profile' ? 'profile' : location.hash === '#friends' ? 'friends' : 'matches');
   openLegalFromHash();
   clearHash();
   if (state.pendingRef) acceptInvite(state.pendingRef);
@@ -283,6 +324,7 @@ document.addEventListener('click', (e) => {
   const legal = t.closest('[data-legal]');
   if (legal) { e.preventDefault(); openLegal(legal.dataset.legal); return; }
   if (t.closest('[data-econ]')) { openEcon(); return; }
+  if (t.closest('[data-add-friend]')) { openAddFriend(); return; }
   const st = t.closest('[data-st]');
   if (st) { stepPick(st.dataset.st); return; }
   const draft = t.closest('[data-draft]');
@@ -655,7 +697,8 @@ async function loadFriends() {
     if (data.rows.length <= 1) {
       $('friends-list').innerHTML = `<div class="glass empty friends-empty">
         <svg class="ic ic-xl" aria-hidden="true"><use href="#i-users"/></svg>
-        <b>Тут будет ваша лига</b>Позови друзей и смотри, кто точнее</div>`;
+        <b>Тут будет ваша лига</b>Найди друга по @username или номеру, или позови по ссылке
+        <button type="button" class="btn btn-primary btn-inline" data-add-friend>${icon('i-user-plus')}Добавить друга</button></div>`;
       return;
     }
     $('friends-list').innerHTML = `<div class="glass list-card">${data.rows.map((r) => `
@@ -682,27 +725,109 @@ async function friendLink() {
 
 const INVITE_TEXT = 'Бросаю тебе вызов в Точняке 🎯 Угадываем счёт матчей, в конце недели смотрим, кто точнее';
 
-// Приглашение с картинкой и кнопкой. Если Telegram старый, отправляем ссылку с превью.
+// Приглашение с картинкой и кнопкой. На телефоне — готовое сообщение через Telegram,
+// на компьютере и если что-то пошло не так — обычное окно «Поделиться» со ссылкой.
+const DESKTOP = ['tdesktop', 'macos', 'weba', 'webk', 'web', 'unknown'];
+let shareFallback = null;
+if (tg && tg.onEvent) {
+  try { tg.onEvent('shareMessageFailed', () => { if (shareFallback) { const f = shareFallback; shareFallback = null; f(); } }); } catch { /* старые клиенты */ }
+}
+
+async function shareLink() {
+  const link = await friendLink();
+  const share = `https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent(INVITE_TEXT)}`;
+  if (tg && tg.openTelegramLink) tg.openTelegramLink(share);
+  else window.open(share, '_blank');
+}
+
+async function shareInvite() {
+  haptic('light');
+  const rich = tg && tg.shareMessage && tg.isVersionAtLeast && tg.isVersionAtLeast('8.0') && !DESKTOP.includes(tg.platform);
+  if (rich) {
+    try {
+      const prepared = await api('/api/invite', { method: 'POST' });
+      shareFallback = () => { shareLink().catch((err) => toast(err.message)); };
+      tg.shareMessage(prepared.id, (sent) => {
+        shareFallback = null;
+        if (sent) { haptic('success'); toast('Вызов отправлен'); }
+      });
+      return;
+    } catch { shareFallback = null; /* ниже обычная ссылка */ }
+  }
+  await shareLink();
+}
+
 $('invite-btn').addEventListener('click', async () => {
   const btn = $('invite-btn');
   btn.disabled = true;
-  haptic('light');
+  try { await shareInvite(); } catch (err) { toast(err.message); } finally { btn.disabled = false; }
+});
+
+// Добавить друга по @username или номеру.
+function openAddFriend() {
+  const p = state.profile || {};
+  const me = p.username ? `<b>@${esc(p.username)}</b>` : '<span class="muted">username не задан в Telegram</span>';
+  openPanel('<span class="league-tag">Добавить друга</span>', `
+    <form id="find-form" class="find" autocomplete="off">
+      <label class="find-field"><svg class="ic" aria-hidden="true"><use href="#i-users"/></svg>
+        <input id="find-q" type="text" inputmode="text" enterkeyhint="search" placeholder="@username или номер" aria-label="Username или номер друга" maxlength="40"></label>
+      <button type="submit" class="btn btn-primary" id="find-btn">${icon('i-user-plus')}Найти и добавить</button>
+      <p id="find-msg" class="find-msg" role="status" hidden></p>
+    </form>
+    <div class="glass list-card">
+      <div class="me-row"><span class="me-row-l">Тебя найдут по</span>${me}</div>
+      <div class="me-row"><span class="me-row-l">Номер телефона</span>${p.hasPhone
+        ? `<span class="me-ok">${icon('i-check')}привязан <button type="button" class="link link-sm" id="unlink-phone">отвязать</button></span>`
+        : canRequestContact() ? '<button type="button" class="link" id="link-phone">Привязать</button>' : '<span class="muted">не привязан</span>'}</div>
+    </div>
+    <p class="sheet-foot">Друга ещё нет в Точняке? Отправь ему приглашение.</p>
+    <button type="button" class="btn btn-glass" id="sheet-invite">${icon('i-share')}Позвать по ссылке</button>`, { addFriend: true });
+  setTimeout(() => { try { $('find-q').focus(); } catch { /* не страшно */ } }, 250);
+}
+
+$('add-friend-btn').addEventListener('click', openAddFriend);
+
+document.addEventListener('submit', async (e) => {
+  if (e.target.id !== 'find-form') return;
+  e.preventDefault();
+  const q = $('find-q').value.trim();
+  const msg = $('find-msg');
+  if (!q) { $('find-q').focus(); return; }
+  $('find-btn').disabled = true;
+  msg.hidden = true;
   try {
-    if (tg && tg.shareMessage && tg.isVersionAtLeast && tg.isVersionAtLeast('8.0')) {
-      try {
-        const prepared = await api('/api/invite', { method: 'POST' });
-        tg.shareMessage(prepared.id, (sent) => { if (sent) { haptic('success'); toast('Вызов отправлен'); } });
-        return;
-      } catch { /* ниже запасной вариант */ }
-    }
-    const link = await friendLink();
-    const share = `https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent(INVITE_TEXT)}`;
-    if (tg && tg.openTelegramLink) tg.openTelegramLink(share);
-    else window.open(share, '_blank');
+    const res = await api('/api/friends/find', { method: 'POST', body: { query: q } });
+    haptic('success');
+    msg.className = 'find-msg ok';
+    msg.textContent = res.added ? `${res.name} теперь у тебя в друзьях` : `${res.name} уже у тебя в друзьях`;
+    msg.hidden = false;
+    $('find-q').value = '';
+    if (state.view === 'friends') loadFriends();
   } catch (err) {
-    toast(err.message);
+    haptic('error');
+    msg.className = 'find-msg bad';
+    msg.textContent = err.message;
+    msg.hidden = false;
   } finally {
-    btn.disabled = false;
+    $('find-btn').disabled = false;
+  }
+});
+
+document.addEventListener('click', async (e) => {
+  if (e.target.closest('#sheet-invite')) { try { await shareInvite(); } catch (err) { toast(err.message); } return; }
+  if (e.target.closest('#unlink-phone')) {
+    if (!(await confirmDialog('Отвязать номер? Друзья больше не найдут тебя по нему.'))) return;
+    try {
+      await api('/api/me/phone', { method: 'DELETE' });
+      if (state.profile) state.profile.hasPhone = false;
+      toast('Номер отвязан');
+      openAddFriend();
+    } catch (err) { toast(err.message); }
+    return;
+  }
+  if (e.target.closest('#link-phone')) {
+    const ok = await requestPhone();
+    if (ok) { haptic('success'); toast('Номер привязан'); openAddFriend(); }
   }
 });
 

@@ -123,7 +123,28 @@ async function ensureFriendCode(db, userId) {
   return null;
 }
 
-async function addFriend(db, userId, code, now) {
+// Номер храним только цифрами: из «+7 (999) 123-45-67» получится 79991234567.
+export function normPhone(raw) {
+  const d = String(raw || '').replace(/\D/g, '');
+  return d.length >= 10 && d.length <= 15 ? d : null;
+}
+
+// Поиск игрока по @username или номеру. Номер ищем по последним 10 цифрам, чтобы 8 и +7 совпадали.
+async function findPlayer(db, query) {
+  const q = String(query || '').trim();
+  const name = /^@?([A-Za-z0-9_]{3,32})$/.exec(q);
+  if (name && !/^\d+$/.test(name[1])) {
+    return db.prepare('SELECT id, first_name, friend_code FROM users WHERE username = ?1 COLLATE NOCASE').bind(name[1]).first();
+  }
+  const phone = normPhone(q);
+  if (phone) {
+    return db.prepare('SELECT id, first_name, friend_code FROM users WHERE phone IS NOT NULL AND substr(phone, -10) = ?1')
+      .bind(phone.slice(-10)).first();
+  }
+  return undefined;
+}
+
+async function addFriend(db, userId, code, now, { bonus = true } = {}) {
   if (!FRIEND_CODE.test(String(code || ''))) return { error: [400, 'bad_code', 'Ссылка-приглашение не подходит'] };
   const friend = await db.prepare('SELECT id, first_name FROM users WHERE friend_code = ?1').bind(code).first();
   if (!friend) return { error: [404, 'no_friend', 'Игрок по этой ссылке не найден'] };
@@ -137,7 +158,7 @@ async function addFriend(db, userId, code, now) {
   ]);
   const added = Boolean(res[0] && res[0].meta && res[0].meta.changes);
   // Монеты пригласившему: только за новичка, который пришёл в первые сутки после регистрации.
-  if (added) {
+  if (added && bonus) {
     const me = await db.prepare('SELECT created_at FROM users WHERE id = ?1').bind(userId).first();
     if (me && now - Date.parse(me.created_at) < 86400000) {
       await db.prepare('UPDATE users SET coins = coins + ?1 WHERE id = ?2').bind(COINS.friendJoined, friend.id).run();
@@ -167,7 +188,7 @@ async function currentTelegramUser(request, env) {
 }
 
 async function loadProfile(db, userId, now) {
-  const user = await db.prepare('SELECT id, first_name, aura, coins, character, created_at FROM users WHERE id = ?1').bind(userId).first();
+  const user = await db.prepare('SELECT id, first_name, username, phone, aura, coins, character, created_at FROM users WHERE id = ?1').bind(userId).first();
   if (!user) return null;
   const weekStart = weekStartIso(now);
   const week = await db.prepare(
@@ -181,6 +202,8 @@ async function loadProfile(db, userId, now) {
   return {
     id: user.id,
     firstName: user.first_name,
+    username: user.username || null,
+    hasPhone: Boolean(user.phone),
     aura: user.aura,
     coins: user.coins || 0,
     character: characterById(user.character) ? user.character : DEFAULT_CHARACTER,
@@ -336,6 +359,30 @@ async function handleApi(request, env, url, now, ctx) {
     }
   }
 
+  // Найти игрока по @username или номеру и сразу добавить в друзья.
+  if (path === '/api/friends/find' && method === 'POST') {
+    const body = await request.json().catch(() => ({}));
+    const found = await findPlayer(db, body.query);
+    if (found === undefined) return error(400, 'bad_query', 'Введи @username или номер телефона');
+    if (!found) return error(404, 'not_found', 'Такого игрока пока нет в Точняке. Позови его по ссылке');
+    if (found.id === tgUser.id) return error(400, 'self', 'Это ты');
+    const code = found.friend_code || (await ensureFriendCode(db, found.id));
+    const res = await addFriend(db, tgUser.id, code, now, { bonus: false });
+    if (res.error) return error(...res.error);
+    if (res.added) {
+      later(ctx, () => notify(env, found.id,
+        `👋 <b>${escHtml(tgUser.firstName || 'Игрок')}</b> добавил тебя в друзья в Точняке. Теперь вы в одной таблице и можете вызывать друг друга на бой.`,
+        'Открыть друзей', `${url.origin}/#friends`));
+    }
+    return json({ added: res.added, name: found.first_name || 'Игрок' });
+  }
+
+  // Отвязать номер.
+  if (path === '/api/me/phone' && method === 'DELETE') {
+    await db.prepare('UPDATE users SET phone = NULL WHERE id = ?1').bind(tgUser.id).run();
+    return json({ ok: true });
+  }
+
   if (path === '/api/friends' && method === 'GET') {
     const period = url.searchParams.get('period') === 'all' ? 'all' : 'week';
     const code = await ensureFriendCode(db, tgUser.id);
@@ -465,6 +512,25 @@ async function handleBot(request, env, url) {
   if (request.headers.get('x-telegram-bot-api-secret-token') !== env.WEBHOOK_SECRET) return new Response('forbidden', { status: 403 });
   const update = await request.json().catch(() => null);
   const msg = update && update.message;
+  // Игрок нажал «Поделиться номером» в приложении: Telegram присылает контакт боту.
+  // Сохраняем, только если это его собственный номер и он уже зарегистрирован.
+  if (msg && msg.contact && msg.from && msg.chat) {
+    const own = msg.contact.user_id === msg.from.id;
+    const phone = own ? normPhone(msg.contact.phone_number) : null;
+    let saved = false;
+    if (phone) {
+      await ensureSchema(env.DB);
+      const r = await env.DB.prepare('UPDATE users SET phone = ?1 WHERE id = ?2').bind(phone, msg.from.id).run();
+      saved = Boolean(r.meta && r.meta.changes);
+    }
+    await botApi(env.BOT_TOKEN, 'sendMessage', {
+      chat_id: msg.chat.id,
+      text: saved ? '✅ Номер привязан. Теперь друзья найдут тебя в Точняке по номеру. Возвращайся в приложение.'
+        : own ? 'Сначала зайди в приложение и прими правила, потом привяжи номер.' : 'Привязать можно только свой номер.',
+      reply_markup: { remove_keyboard: true }
+    });
+    return new Response('ok');
+  }
   if (!msg || !msg.text || !msg.chat) return new Response('ok');
   const appUrl = url.origin;
   const text = msg.text.trim();

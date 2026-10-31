@@ -1,8 +1,8 @@
 // Схема базы D1. Таблицы создаются сами при первом запросе после деплоя,
 // поэтому отдельные миграции из консоли запускать не нужно.
 //
-// Храним минимум: id Telegram, имя, username и язык. Фамилию, номер телефона
-// и фото не храним.
+// Храним минимум: id Telegram, имя, username и язык. Номер телефона — только если игрок
+// сам поделился им через кнопку Telegram, чтобы друзья могли найти его. Фамилию и фото не храним.
 
 const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS users (
@@ -95,7 +95,8 @@ const COLUMNS = [
   'ALTER TABLE matches ADD COLUMN away_crest TEXT',
   'ALTER TABLE users ADD COLUMN friend_code TEXT',
   'ALTER TABLE users ADD COLUMN coins INTEGER NOT NULL DEFAULT 0',
-  "ALTER TABLE users ADD COLUMN character TEXT NOT NULL DEFAULT 'tochnyak'"
+  "ALTER TABLE users ADD COLUMN character TEXT NOT NULL DEFAULT 'tochnyak'",
+  'ALTER TABLE users ADD COLUMN phone TEXT'
 ];
 
 async function migrate(db) {
@@ -106,6 +107,8 @@ async function migrate(db) {
     }
   }
   await db.prepare('CREATE UNIQUE INDEX IF NOT EXISTS users_by_friend_code ON users (friend_code)').run();
+  await db.prepare('CREATE INDEX IF NOT EXISTS users_by_username ON users (username COLLATE NOCASE)').run();
+  await db.prepare('CREATE INDEX IF NOT EXISTS users_by_phone ON users (phone)').run();
 }
 
 let schemaReady = null;

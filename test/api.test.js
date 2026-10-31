@@ -347,3 +347,48 @@ test('старые адреса правил ведут в приложение'
     assert.equal(res.headers.get('location'), `https://tochnyak.test/${hash}`);
   }
 });
+
+test('номер через бота, поиск друга по username и номеру', async () => {
+  const env = makeEnv();
+  await call(env, '/api/me', { user: max });
+  await call(env, '/api/auth', { user: max, method: 'POST', body: { accept: true } });
+  await call(env, '/api/auth', { user: vitya, method: 'POST', body: { accept: true } });
+  const sent = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (u, init) => { sent.push({ u: String(u), body: init && init.body }); return new Response('{"ok":true,"result":{}}'); };
+  try {
+    const hook = (message) => worker.fetch(new Request('https://tochnyak.test/bot/webhook', {
+      method: 'POST', headers: { 'x-telegram-bot-api-secret-token': 'test-secret', 'content-type': 'application/json' },
+      body: JSON.stringify({ message })
+    }), env);
+    // Чужой номер не сохраняется.
+    await hook({ message_id: 1, chat: { id: 2 }, from: { id: 2 }, contact: { phone_number: '+7 900 000-00-01', user_id: 99 } });
+    let r = await call(env, '/api/me', { user: vitya });
+    assert.equal(r.data.profile.hasPhone, false);
+    // Свой номер сохраняется.
+    await hook({ message_id: 2, chat: { id: 2 }, from: { id: 2 }, contact: { phone_number: '+7 (912) 345-67-89', user_id: 2 } });
+    r = await call(env, '/api/me', { user: vitya });
+    assert.equal(r.data.profile.hasPhone, true);
+
+    r = await call(env, '/api/friends/find', { user: max, method: 'POST', body: { query: 'привет' } });
+    assert.equal(r.status, 400);
+    r = await call(env, '/api/friends/find', { user: max, method: 'POST', body: { query: '89123456789' } });
+    assert.deepEqual(r.data, { added: true, name: 'Витя' }, '8 вместо +7 тоже находит');
+    r = await call(env, '/api/friends/find', { user: vitya, method: 'POST', body: { query: '@MAX' } });
+    assert.deepEqual(r.data, { added: false, name: 'Макс' }, 'username без учёта регистра, уже друзья');
+    r = await call(env, '/api/friends/find', { user: max, method: 'POST', body: { query: '@nobody_here' } });
+    assert.equal(r.status, 404);
+    r = await call(env, '/api/friends/find', { user: max, method: 'POST', body: { query: '@max' } });
+    assert.equal(r.status, 400, 'себя добавить нельзя');
+    r = await call(env, '/api/me', { user: vitya });
+    assert.equal(r.data.profile.friendsCount, 1);
+    r = await call(env, '/api/me', { user: max });
+    assert.equal(r.data.profile.coins, 0, 'за поиск монеты за приглашение не даются');
+
+    await call(env, '/api/me/phone', { user: vitya, method: 'DELETE' });
+    r = await call(env, '/api/me', { user: vitya });
+    assert.equal(r.data.profile.hasPhone, false);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
