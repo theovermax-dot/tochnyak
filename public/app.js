@@ -410,6 +410,12 @@ document.addEventListener('click', (e) => {
   if (shopAct) { shopAction(shopAct.dataset.shop, shopAct.dataset.id); return; }
   const unfriend = t.closest('[data-unfriend]');
   if (unfriend) { removeFriend(unfriend.dataset.unfriend, unfriend.dataset.name); return; }
+  const pl = t.closest('[data-player]');
+  if (pl) {
+    const row = (state.ratingCache && state.ratingCache[state.period] && state.ratingCache[state.period].rows || []).find((x) => x.pub === pl.dataset.player);
+    if (row && row.isMe) go('profile'); else openPlayer(pl.dataset.player, row || { name: pl.dataset.pname });
+    return;
+  }
   const fopen = t.closest('[data-friend-open]');
   if (fopen) { openFriend(fopen.dataset.friendOpen); return; }
   const qp = t.closest('[data-qp]');
@@ -1291,16 +1297,45 @@ $('copy-btn') && $('copy-btn').addEventListener('click', async () => {
 // Карточка друга: бой или убрать из друзей.
 function openFriend(code) {
   const r = (state.friendRows || []).find((x) => x.code === code);
-  if (!r) return;
-  openPanel('<span class="league-tag">Друг</span>', `
-    <div class="friend-card">
-      ${ava(r.name, r.photo, 'avatar-lg')}
-      <b>${esc(r.name)}</b>
-      <span class="muted small">${r.rank} место · <span class="num">${r.pts}</span> ауры ${state.fperiod === 'week' ? 'за неделю' : 'всего'}</span>
+  if (r) openPlayer(r.pub, r);
+}
+
+// Профиль другого игрока: персонаж (можно крутить), аура и статистика. Для друга — кнопки боя.
+async function openPlayer(pub, hint = {}) {
+  if (!pub) return;
+  haptic('light');
+  const head = (name, photo) => `<div class="player-head">${ava(name, photo, 'avatar-sm')}<b>${esc(name || 'Игрок')}</b></div>`;
+  openPanel('<span class="league-tag">Профиль игрока</span>', `${head(hint.name, hint.photo)}
+    <div class="glass empty"><span class="spinner" aria-hidden="true"></span></div>`, { player: pub });
+  let p;
+  try { p = await api(`/api/player/${encodeURIComponent(pub)}`); } catch (err) {
+    if (state.sheet && state.sheet.player === pub) $('sheet-body').innerHTML = `<div class="glass empty"><b>Профиль не открылся</b>${esc(err.message)}</div>`;
+    return;
+  }
+  if (!state.sheet || state.sheet.player !== pub) return;
+  if (p.isMe) { closeSheet(); go('profile'); return; }
+  const since = p.joinedAt ? new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long', year: 'numeric', timeZone: TZ }).format(new Date(p.joinedAt)) : '';
+  const fc = p.friendCode;
+  $('sheet-body').innerHTML = `
+    <div class="player-card">
+      <div class="hero-dude player-dude">
+        <span class="dude-glow" aria-hidden="true"></span>
+        <div class="spin" data-spin="${esc(p.character)}" role="img" aria-label="Персонаж игрока ${esc(p.name)}: крути пальцем"></div>
+      </div>
+      <div class="profile-name">${head(p.name, p.photo)}
+        <span class="stat-chip player-aura"><svg class="ic ic-aura" aria-hidden="true"><use href="#i-target"/></svg><span class="num">${p.aura}</span></span></div>
+      <div class="strip strip-flat">
+        <span><b class="num">${p.weekRank || '—'}</b><span>место за неделю</span></span>
+        <span><b class="num">${p.hits || 0}<small> из ${p.settledPredictions || 0}</small></b><span>матчей угадано</span></span>
+        <span><b class="num">${p.exactHits}</b><span>${plural(p.exactHits, ['точный счёт', 'точных счёта', 'точных счетов'])}</span></span>
+      </div>
+      ${since ? `<span class="player-since">В Точняке с ${esc(since.replace(' г.', ''))}</span>` : ''}
     </div>
-    <button type="button" class="btn btn-primary" data-challenge="${esc(r.code)}" data-name="${esc(r.name)}">${icon('i-swords')}Вызвать на бой</button>
-    <button type="button" class="btn btn-glass" data-today-battle="${esc(r.code)}" data-name="${esc(r.name)}">${icon('i-swords')}Бой на сегодняшние матчи</button>
-    <button type="button" class="btn btn-ghost" data-unfriend="${esc(r.code)}" data-name="${esc(r.name)}">Убрать из друзей</button>`, { friend: code });
+    ${fc ? `<button type="button" class="btn btn-primary" data-challenge="${esc(fc)}" data-name="${esc(p.name)}">${icon('i-swords')}Вызвать на бой</button>
+    <button type="button" class="btn btn-glass" data-today-battle="${esc(fc)}" data-name="${esc(p.name)}">${icon('i-swords')}Бой на сегодняшние матчи</button>
+    <button type="button" class="btn btn-ghost" data-unfriend="${esc(fc)}" data-name="${esc(p.name)}">Убрать из друзей</button>`
+    : '<p class="sheet-foot">Чтобы вызвать на бой, добавьте друг друга в друзья.</p>'}`;
+  mountSpinners();
 }
 
 async function removeFriend(code, name) {
@@ -1342,7 +1377,7 @@ function renderRating(data) {
       return;
     }
     $('rating-list').innerHTML = `<div class="glass list-card">${data.rows.map((r) => `
-      <div class="lb-row${r.isMe ? ' me' : ''}">
+      <div class="lb-row lb-tap${r.isMe ? ' me' : ''}" data-player="${esc(r.pub || '')}" data-pname="${esc(r.name)}" role="button" tabindex="0" aria-label="Профиль: ${esc(r.isMe ? 'ты' : r.name)}">
         <span class="lb-rank num">${r.rank}</span>
         ${ava(r.name, r.photo, 'avatar-sm')}
         <span class="lb-name">${r.isMe ? 'Ты' : esc(r.name)}</span>

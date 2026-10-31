@@ -128,7 +128,10 @@ const COLUMNS = [
   // Ссылка на аватарку из Telegram (обновляется при каждом входе).
   'ALTER TABLE users ADD COLUMN photo_url TEXT',
   // 1 — бот присылает напоминания о матчах и итоги недели, 0 — игрок отключил их командой /mute.
-  'ALTER TABLE users ADD COLUMN notify INTEGER NOT NULL DEFAULT 1'
+  'ALTER TABLE users ADD COLUMN notify INTEGER NOT NULL DEFAULT 1',
+  // Публичный код для открытия чужого профиля из рейтинга. Отдельно от кода дружбы,
+  // чтобы по рейтингу нельзя было добавить кого угодно в друзья.
+  'ALTER TABLE users ADD COLUMN pub_code TEXT'
 ];
 
 async function migrate(db) {
@@ -139,6 +142,7 @@ async function migrate(db) {
     }
   }
   await db.prepare('CREATE UNIQUE INDEX IF NOT EXISTS users_by_friend_code ON users (friend_code)').run();
+  await db.prepare('CREATE UNIQUE INDEX IF NOT EXISTS users_by_pub_code ON users (pub_code)').run();
   await db.prepare('CREATE INDEX IF NOT EXISTS users_by_username ON users (username COLLATE NOCASE)').run();
   await db.prepare('CREATE INDEX IF NOT EXISTS users_by_phone ON users (phone)').run();
 }

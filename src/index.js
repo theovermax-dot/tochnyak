@@ -175,6 +175,45 @@ async function shopState(db, userId) {
 }
 
 // Выдаёт игроку код приглашения, если его ещё нет.
+// Публичные коды для строк рейтинга и друзей: выдаём тем, у кого их ещё нет.
+async function withPubCodes(db, rows) {
+  for (const r of rows) {
+    for (let i = 0; !r.pub_code && i < 3; i += 1) {
+      const code = newFriendCode();
+      try {
+        await db.prepare('UPDATE users SET pub_code = ?1 WHERE id = ?2 AND pub_code IS NULL').bind(code, r.id).run();
+        r.pub_code = (await db.prepare('SELECT pub_code FROM users WHERE id = ?1').bind(r.id).first()).pub_code;
+      } catch { /* совпал код, пробуем ещё раз */ }
+    }
+  }
+  return rows;
+}
+
+// Статистика игрока для своего и чужого профиля.
+async function playerStats(db, userId, now) {
+  const weekStart = weekStartIso(now);
+  const week = await db.prepare(
+    'SELECT COALESCE(SUM(points), 0) AS pts FROM predictions WHERE user_id = ?1 AND settled_at >= ?2'
+  ).bind(userId, weekStart).first();
+  const { results: settled } = await db.prepare(
+    `SELECT p.points, p.kind, p.home, p.away, m.home_score AS hs, m.away_score AS ast
+     FROM predictions p JOIN matches m ON m.id = p.match_id
+     WHERE p.user_id = ?1 AND p.settled_at IS NOT NULL
+     ORDER BY p.settled_at DESC, p.match_id DESC LIMIT 500`
+  ).bind(userId).all();
+  const stats = profileStats(settled);
+  // Место в рейтинге недели: сколько игроков набрали больше. Без очков за неделю места нет.
+  let weekRank = null;
+  if (week.pts > 0) {
+    const above = await db.prepare(
+      `SELECT COUNT(*) AS n FROM (SELECT user_id, SUM(points) AS pts FROM predictions
+       WHERE settled_at >= ?1 GROUP BY user_id HAVING pts > ?2)`
+    ).bind(weekStart, week.pts).first();
+    weekRank = above.n + 1;
+  }
+  return { weekAura: week.pts, weekRank, settledPredictions: stats.total, hits: stats.hits, exactHits: stats.exact, streak: stats.streak };
+}
+
 async function ensureFriendCode(db, userId) {
   for (let i = 0; i < 3; i += 1) {
     const row = await db.prepare('SELECT friend_code FROM users WHERE id = ?1').bind(userId).first();
@@ -263,26 +302,7 @@ async function currentTelegramUser(request, env) {
 async function loadProfile(db, userId, now) {
   const user = await db.prepare('SELECT id, first_name, username, phone, photo_url, aura, coins, character, created_at FROM users WHERE id = ?1').bind(userId).first();
   if (!user) return null;
-  const weekStart = weekStartIso(now);
-  const week = await db.prepare(
-    'SELECT COALESCE(SUM(points), 0) AS pts, COUNT(*) AS n FROM predictions WHERE user_id = ?1 AND settled_at >= ?2'
-  ).bind(userId, weekStart).first();
-  const { results: settled } = await db.prepare(
-    `SELECT p.points, p.kind, p.home, p.away, m.home_score AS hs, m.away_score AS ast
-     FROM predictions p JOIN matches m ON m.id = p.match_id
-     WHERE p.user_id = ?1 AND p.settled_at IS NOT NULL
-     ORDER BY p.settled_at DESC, p.match_id DESC LIMIT 500`
-  ).bind(userId).all();
-  const stats = profileStats(settled);
-  // Место в рейтинге недели: сколько игроков набрали больше. Без очков за неделю места нет.
-  let weekRank = null;
-  if (week.pts > 0) {
-    const above = await db.prepare(
-      `SELECT COUNT(*) AS n FROM (SELECT user_id, SUM(points) AS pts FROM predictions
-       WHERE settled_at >= ?1 GROUP BY user_id HAVING pts > ?2)`
-    ).bind(weekStart, week.pts).first();
-    weekRank = above.n + 1;
-  }
+  const st = await playerStats(db, userId, now);
   return {
     id: user.id,
     firstName: user.first_name,
@@ -292,12 +312,7 @@ async function loadProfile(db, userId, now) {
     aura: user.aura,
     coins: user.coins || 0,
     character: skinById(user.character) ? user.character : DEFAULT_CHARACTER,
-    weekAura: week.pts,
-    weekRank,
-    settledPredictions: stats.total,
-    hits: stats.hits,
-    exactHits: stats.exact,
-    streak: stats.streak,
+    ...st,
     joinedAt: user.created_at,
     friendCode: await ensureFriendCode(db, userId),
     friendsCount: (await db.prepare('SELECT COUNT(*) AS n FROM friends WHERE user_id = ?1').bind(userId).first()).n,
@@ -517,11 +532,12 @@ async function handleApi(request, env, url, now, ctx) {
     const ref = refFor(tgUser.username, code);
     const circle = 'u.id = ?1 OR u.id IN (SELECT friend_id FROM friends WHERE user_id = ?1)';
     const { results } = period === 'all'
-      ? await db.prepare(`SELECT u.id, u.first_name, u.friend_code, u.photo_url, u.aura AS pts FROM users u
+      ? await db.prepare(`SELECT u.id, u.first_name, u.friend_code, u.pub_code, u.photo_url, u.aura AS pts FROM users u
           WHERE ${circle} ORDER BY pts DESC, u.id`).bind(tgUser.id).all()
-      : await db.prepare(`SELECT u.id, u.first_name, u.friend_code, u.photo_url, COALESCE(SUM(p.points), 0) AS pts FROM users u
+      : await db.prepare(`SELECT u.id, u.first_name, u.friend_code, u.pub_code, u.photo_url, COALESCE(SUM(p.points), 0) AS pts FROM users u
           LEFT JOIN predictions p ON p.user_id = u.id AND p.settled_at >= ?2
           WHERE ${circle} GROUP BY u.id ORDER BY pts DESC, u.id`).bind(tgUser.id, weekStartIso(now)).all();
+    await withPubCodes(db, results);
     return json({
       period,
       code,
@@ -534,7 +550,8 @@ async function handleApi(request, env, url, now, ctx) {
         photo: r.photo_url || null,
         pts: r.pts,
         isMe: r.id === tgUser.id,
-        code: r.id === tgUser.id ? null : r.friend_code
+        code: r.id === tgUser.id ? null : r.friend_code,
+        pub: r.pub_code
       }))
     });
   }
@@ -616,7 +633,7 @@ async function handleApi(request, env, url, now, ctx) {
     let me;
     if (period === 'all') {
       ({ results: rows } = await db.prepare(
-        'SELECT id, first_name, photo_url, aura AS pts FROM users WHERE aura > 0 ORDER BY aura DESC, id LIMIT 50'
+        'SELECT id, first_name, photo_url, pub_code, aura AS pts FROM users WHERE aura > 0 ORDER BY aura DESC, id LIMIT 50'
       ).all());
       const mine = await db.prepare('SELECT aura FROM users WHERE id = ?1').bind(tgUser.id).first();
       const above = await db.prepare('SELECT COUNT(*) AS n FROM users WHERE aura > ?1').bind(mine.aura).first();
@@ -624,7 +641,7 @@ async function handleApi(request, env, url, now, ctx) {
     } else {
       const weekStart = weekStartIso(now);
       ({ results: rows } = await db.prepare(
-        `SELECT u.id, u.first_name, u.photo_url, SUM(p.points) AS pts
+        `SELECT u.id, u.first_name, u.photo_url, u.pub_code, SUM(p.points) AS pts
          FROM predictions p JOIN users u ON u.id = p.user_id
          WHERE p.settled_at >= ?1 GROUP BY u.id HAVING pts > 0
          ORDER BY pts DESC, u.id LIMIT 50`
@@ -638,10 +655,32 @@ async function handleApi(request, env, url, now, ctx) {
       ).bind(weekStart, mine.pts).first();
       me = { pts: mine.pts, rank: mine.pts > 0 ? above.n + 1 : null, weekStart };
     }
+    await withPubCodes(db, rows);
     return json({
       period,
       me,
-      rows: rows.map((r, i) => ({ rank: i + 1, name: r.first_name || 'Игрок', photo: r.photo_url || null, pts: r.pts, isMe: r.id === tgUser.id }))
+      rows: rows.map((r, i) => ({ rank: i + 1, name: r.first_name || 'Игрок', photo: r.photo_url || null, pts: r.pts, isMe: r.id === tgUser.id, pub: r.pub_code }))
+    });
+  }
+
+  // Чужой профиль: имя, аватарка, персонаж и статистика. Номер, ник и код дружбы не отдаём,
+  // код дружбы — только если вы уже друзья (для кнопки боя).
+  const playerPath = /^\/api\/player\/([a-z0-9]{8})$/.exec(path);
+  if (playerPath && method === 'GET') {
+    const u = await db.prepare('SELECT id, first_name, photo_url, aura, character, friend_code, created_at FROM users WHERE pub_code = ?1 AND accepted_terms_at IS NOT NULL')
+      .bind(playerPath[1]).first();
+    if (!u) return error(404, 'no_player', 'Игрок не найден');
+    const isMe = u.id === tgUser.id;
+    const friend = isMe ? null : await db.prepare('SELECT 1 AS f FROM friends WHERE user_id = ?1 AND friend_id = ?2').bind(tgUser.id, u.id).first();
+    return json({
+      name: u.first_name || 'Игрок',
+      photo: u.photo_url || null,
+      character: skinById(u.character) ? u.character : DEFAULT_CHARACTER,
+      aura: u.aura,
+      joinedAt: u.created_at,
+      isMe,
+      friendCode: friend ? u.friend_code : null,
+      ...(await playerStats(db, u.id, now))
     });
   }
 

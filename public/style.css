@@ -911,3 +911,12 @@ button, a, [role="button"] { touch-action: manipulation; }
 @media (max-width: 340px) {
   .wordmark-sm { display: none; }
 }
+
+/* Профиль другого игрока */
+.player-card { display: flex; flex-direction: column; gap: 12px; }
+.player-dude { height: 290px; }
+.player-head { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.player-head b { font-family: 'Unbounded', sans-serif; font-weight: 600; font-size: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.player-aura { flex: none; height: 34px; padding: 0 12px; border-radius: 999px; background: rgba(255, 255, 255, 0.07); border: 1px solid var(--glass-line); font-size: 15px; font-weight: 800; }
+.player-since { text-align: center; font-size: 12px; font-weight: 600; color: var(--faint); }
+#sheet-body > .player-head { margin-bottom: 4px; }

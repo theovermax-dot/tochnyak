@@ -618,3 +618,44 @@ test('бот: /mute и /unmute выключают и включают напом
     assert.match(sent.at(-1).text, /снова включены/);
   } finally { globalThis.fetch = realFetch; }
 });
+
+test('чужой профиль: открывается из рейтинга, без личных данных, код дружбы только у друзей', async () => {
+  const env = makeEnv();
+  await call(env, '/api/me', { user: max });
+  const kickoff = new Date(Date.now() - 3 * 3600000).toISOString();
+  await upsertMatches(env.DB, [rawMatch(900, new Date(Date.now() + 3600000).toISOString())]);
+  let r = await call(env, '/api/auth', { user: max, method: 'POST', body: { accept: true } });
+  const maxCode = r.data.profile.friendCode;
+  await call(env, '/api/auth', { user: vitya, method: 'POST', body: { accept: true } });
+  await call(env, '/api/predictions', { user: max, method: 'POST', body: { matchId: 900, home: 2, away: 1 } });
+  await env.DB.prepare("UPDATE matches SET status = 'FINISHED', home_score = 2, away_score = 1, utc_date = ?1 WHERE id = 900").bind(kickoff).run();
+  await settleFinished(env.DB);
+  env.DB.db.exec("UPDATE users SET character = 'betty_2' WHERE id = 1");
+
+  r = await call(env, '/api/leaderboard?period=week', { user: vitya });
+  const pub = r.data.rows[0].pub;
+  assert.match(pub, /^[a-z0-9]{8}$/);
+  assert.notEqual(pub, maxCode, 'публичный код не совпадает с кодом дружбы');
+
+  r = await call(env, `/api/player/${pub}`, { user: vitya });
+  assert.equal(r.status, 200);
+  assert.equal(r.data.name, 'Макс');
+  assert.equal(r.data.character, 'betty_2');
+  assert.equal(r.data.aura, 12);
+  assert.equal(r.data.weekRank, 1);
+  assert.equal(r.data.hits, 1);
+  assert.equal(r.data.exactHits, 1);
+  assert.equal(r.data.isMe, false);
+  assert.equal(r.data.friendCode, null, 'не друзья — кода дружбы нет');
+  for (const k of ['phone', 'username', 'id', 'coins']) assert.equal(r.data[k], undefined, `${k} не отдаём`);
+
+  await call(env, '/api/friends', { user: vitya, method: 'POST', body: { code: maxCode } });
+  r = await call(env, `/api/player/${pub}`, { user: vitya });
+  assert.equal(r.data.friendCode, maxCode);
+  r = await call(env, `/api/player/${pub}`, { user: max });
+  assert.equal(r.data.isMe, true);
+  r = await call(env, '/api/player/zzzzzzzz', { user: vitya });
+  assert.equal(r.status, 404);
+  r = await call(env, '/api/friends?period=week', { user: vitya });
+  assert.ok(r.data.rows.every((x) => /^[a-z0-9]{8}$/.test(x.pub)));
+});
