@@ -60,15 +60,15 @@ const escHtml = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<':
 
 // Текст приглашения: приходит другу под картинкой вместе с кнопкой.
 export function inviteCaption(name) {
-  const who = escHtml(String(name || '').trim().slice(0, 32) || 'друга');
+  const who = escHtml(String(name || '').trim().slice(0, 32) || 'Друг');
   return [
-    `<b>Вызов от ${who} 🎯</b>`,
+    `<b>${who} бросает тебе вызов в Точняке 🎯</b>`,
     '',
-    'Го угадывать счёт матчей: АПЛ, Ла Лига, Лига чемпионов и ещё четыре лиги.',
+    'Го угадывать матчи: АПЛ, Ла Лига, Лига чемпионов и ещё четыре лиги.',
     '',
-    'Угадал точный счёт — <b>+10 ауры</b>. В конце недели смотрим, кто из нас точнее.',
+    'Угадал победителя — <b>+2 ауры</b>, точный счёт — <b>до +12</b>. В конце недели смотрим, кто из нас точнее.',
     '',
-    'Бесплатно и без денег. Жми 👇'
+    'Бесплатно и без ставок. Жми 👇'
   ].join('\n');
 }
 
@@ -76,14 +76,15 @@ export function inviteCaption(name) {
 export function welcomeCaption(inviter) {
   const head = inviter
     ? `<b>${escHtml(String(inviter).slice(0, 32))} бросает тебе вызов в Точняке</b>`
-    : '<b>Точняк — прогнозы на футбол, где решает точность</b>';
+    : '<b>Точняк — угадай, чем закончится матч</b>';
   return [
     head,
     '',
-    'Угадывай счёт матчей АПЛ, Ла Лиги, Серии А, Бундеслиги, Лиги 1, Эредивизи и Лиги чемпионов.',
+    'Угадывай победителя или точный счёт в матчах АПЛ, Ла Лиги, Серии А, Бундеслиги, Лиги 1, Эредивизи и Лиги чемпионов.',
     '',
-    '🎯 Точный счёт — <b>+10 ауры</b>',
-    '🏆 Недельный рейтинг и лига друзей',
+    '✅ Победитель — <b>+2 ауры</b>, точный счёт — <b>до +12</b>',
+    '⚔️ Бои с друзьями по нескольким матчам',
+    '🏆 Недельный рейтинг и таблица друзей',
     '🛍 Монеты на новых персонажей',
     '',
     'Вход в один шаг через Telegram. Игра бесплатная: без ставок и без денег.'
@@ -214,7 +215,7 @@ async function currentTelegramUser(request, env) {
 }
 
 async function loadProfile(db, userId, now) {
-  const user = await db.prepare('SELECT id, first_name, username, phone, aura, coins, character, created_at FROM users WHERE id = ?1').bind(userId).first();
+  const user = await db.prepare('SELECT id, first_name, username, phone, photo_url, aura, coins, character, created_at FROM users WHERE id = ?1').bind(userId).first();
   if (!user) return null;
   const weekStart = weekStartIso(now);
   const week = await db.prepare(
@@ -229,6 +230,7 @@ async function loadProfile(db, userId, now) {
     id: user.id,
     firstName: user.first_name,
     username: user.username || null,
+    photo: user.photo_url || null,
     hasPhone: Boolean(user.phone),
     aura: user.aura,
     coins: user.coins || 0,
@@ -257,11 +259,12 @@ async function handleApi(request, env, url, now, ctx) {
 
   if (path === '/api/me' && method === 'GET') {
     const profile = await loadProfile(db, tgUser.id, now);
-    if (!profile) return json({ registered: false, firstName: tgUser.firstName });
+    if (!profile) return json({ registered: false, firstName: tgUser.firstName, photo: tgUser.photoUrl });
     const reg = await db.prepare('SELECT reg_version FROM users WHERE id = ?1').bind(tgUser.id).first();
-    if (reg.reg_version < REG_VERSION) return json({ registered: false, returning: true, firstName: tgUser.firstName });
-    await db.prepare('UPDATE users SET last_seen_at = ?1, first_name = ?2, username = ?3, language_code = ?4 WHERE id = ?5')
-      .bind(nowIso(now), tgUser.firstName, tgUser.username, tgUser.languageCode, tgUser.id).run();
+    if (reg.reg_version < REG_VERSION) return json({ registered: false, returning: true, firstName: tgUser.firstName, photo: tgUser.photoUrl });
+    await db.prepare('UPDATE users SET last_seen_at = ?1, first_name = ?2, username = ?3, language_code = ?4, photo_url = ?6 WHERE id = ?5')
+      .bind(nowIso(now), tgUser.firstName, tgUser.username, tgUser.languageCode, tgUser.id, tgUser.photoUrl).run();
+    profile.photo = tgUser.photoUrl;
     return json({ registered: true, profile });
   }
 
@@ -269,12 +272,12 @@ async function handleApi(request, env, url, now, ctx) {
     const body = await request.json().catch(() => ({}));
     if (body.accept !== true) return error(400, 'consent_required', 'Нужно согласие с правилами и политикой конфиденциальности');
     const at = nowIso(now);
-    await db.prepare(`INSERT INTO users (id, first_name, username, language_code, aura, accepted_terms_at, created_at, last_seen_at, reg_version)
-      VALUES (?1, ?2, ?3, ?4, 0, ?5, ?5, ?5, ?6)
+    await db.prepare(`INSERT INTO users (id, first_name, username, language_code, aura, accepted_terms_at, created_at, last_seen_at, reg_version, photo_url)
+      VALUES (?1, ?2, ?3, ?4, 0, ?5, ?5, ?5, ?6, ?7)
       ON CONFLICT(id) DO UPDATE SET first_name = excluded.first_name, username = excluded.username,
         language_code = excluded.language_code, last_seen_at = excluded.last_seen_at,
-        accepted_terms_at = excluded.accepted_terms_at, reg_version = excluded.reg_version`)
-      .bind(tgUser.id, tgUser.firstName, tgUser.username, tgUser.languageCode, at, REG_VERSION).run();
+        accepted_terms_at = excluded.accepted_terms_at, reg_version = excluded.reg_version, photo_url = excluded.photo_url`)
+      .bind(tgUser.id, tgUser.firstName, tgUser.username, tgUser.languageCode, at, REG_VERSION, tgUser.photoUrl).run();
     return json({ registered: true, profile: await loadProfile(db, tgUser.id, now) });
   }
 
@@ -293,6 +296,7 @@ async function handleApi(request, env, url, now, ctx) {
       db.prepare('DELETE FROM notifications WHERE user_id = ?1').bind(tgUser.id),
       db.prepare('DELETE FROM friends WHERE user_id = ?1 OR friend_id = ?1').bind(tgUser.id),
       db.prepare('DELETE FROM owned_characters WHERE user_id = ?1').bind(tgUser.id),
+      db.prepare('DELETE FROM support_map WHERE user_chat_id = ?1').bind(tgUser.id),
       db.prepare('DELETE FROM users WHERE id = ?1').bind(tgUser.id)
     ]);
     return json({ deleted: true });
@@ -386,9 +390,9 @@ async function handleApi(request, env, url, now, ctx) {
       const res = await savePicks(db, { battleId, userId: tgUser.id, picks: body.picks, now, lockMs: lockMs(env) });
       if (res.error) return error(...res.error);
       if (res.accepted) {
-        await addNotice(db, res.creatorId, 'battle_accepted', `${tgUser.firstName || 'Друг'} принял твой бой`, `#battle-${battleId}`, now);
+        await addNotice(db, res.creatorId, 'battle_accepted', `${tgUser.firstName || 'Друг'} принимает твой бой`, `#battle-${battleId}`, now);
         later(ctx, () => notify(env, res.creatorId,
-          `🔥 <b>${escHtml(tgUser.firstName || 'Друг')} принял бой</b>\n\nПрогнозы закрыты до начала матчей. Итог узнаешь после финального свистка.`,
+          `🔥 <b>${escHtml(tgUser.firstName || 'Друг')} принимает бой</b>\n\nПрогнозы друг друга откроются, когда начнутся матчи. Итог — после финального свистка.`,
           'Открыть бой', `${url.origin}/#battle-${battleId}`));
       }
       const res2 = await getBattle(db, { battleId, userId: tgUser.id, now, lockMs: lockMs(env) });
@@ -397,7 +401,7 @@ async function handleApi(request, env, url, now, ctx) {
     if (action === 'close' && method === 'POST') {
       const res = await closeBattle(db, { battleId, userId: tgUser.id });
       if (res.error) return error(...res.error);
-      if (res.status === 'declined') await addNotice(db, res.creatorId, 'battle_declined', `${tgUser.firstName || 'Друг'} отказался от боя`, `#battle-${battleId}`, now);
+      if (res.status === 'declined') await addNotice(db, res.creatorId, 'battle_declined', `${tgUser.firstName || 'Друг'} отклоняет твой бой`, `#battle-${battleId}`, now);
       return json(res);
     }
   }
@@ -413,9 +417,9 @@ async function handleApi(request, env, url, now, ctx) {
     const res = await addFriend(db, tgUser.id, code, now, { bonus: false });
     if (res.error) return error(...res.error);
     if (res.added) {
-      await addNotice(db, found.id, 'friend_added', `${tgUser.firstName || 'Игрок'} добавил тебя в друзья`, '#friends', now);
+      await addNotice(db, found.id, 'friend_added', `Новый друг: ${tgUser.firstName || 'Игрок'}. Вы теперь в одной таблице`, '#friends', now);
       later(ctx, () => notify(env, found.id,
-        `👋 <b>${escHtml(tgUser.firstName || 'Игрок')}</b> добавил тебя в друзья в Точняке. Теперь вы в одной таблице и можете вызывать друг друга на бой.`,
+        `👋 <b>Новый друг в Точняке: ${escHtml(tgUser.firstName || 'Игрок')}</b>\n\nТеперь вы в одной таблице и можете вызывать друг друга на бой.`,
         'Открыть друзей', `${url.origin}/#friends`));
     }
     return json({ added: res.added, name: found.first_name || 'Игрок' });
@@ -444,9 +448,9 @@ async function handleApi(request, env, url, now, ctx) {
     const code = await ensureFriendCode(db, tgUser.id);
     const circle = 'u.id = ?1 OR u.id IN (SELECT friend_id FROM friends WHERE user_id = ?1)';
     const { results } = period === 'all'
-      ? await db.prepare(`SELECT u.id, u.first_name, u.friend_code, u.aura AS pts FROM users u
+      ? await db.prepare(`SELECT u.id, u.first_name, u.friend_code, u.photo_url, u.aura AS pts FROM users u
           WHERE ${circle} ORDER BY pts DESC, u.id`).bind(tgUser.id).all()
-      : await db.prepare(`SELECT u.id, u.first_name, u.friend_code, COALESCE(SUM(p.points), 0) AS pts FROM users u
+      : await db.prepare(`SELECT u.id, u.first_name, u.friend_code, u.photo_url, COALESCE(SUM(p.points), 0) AS pts FROM users u
           LEFT JOIN predictions p ON p.user_id = u.id AND p.settled_at >= ?2
           WHERE ${circle} GROUP BY u.id ORDER BY pts DESC, u.id`).bind(tgUser.id, weekStartIso(now)).all();
     return json({
@@ -457,6 +461,7 @@ async function handleApi(request, env, url, now, ctx) {
       rows: results.map((r, i) => ({
         rank: i + 1,
         name: r.first_name || 'Игрок',
+        photo: r.photo_url || null,
         pts: r.pts,
         isMe: r.id === tgUser.id,
         code: r.id === tgUser.id ? null : r.friend_code
@@ -493,7 +498,7 @@ async function handleApi(request, env, url, now, ctx) {
     const body = await request.json().catch(() => ({}));
     const res = await addFriend(db, tgUser.id, body.code, now);
     if (res.error) return error(...res.error);
-    if (res.added && res.friendId) await addNotice(db, res.friendId, 'friend_joined', `${tgUser.firstName || 'Игрок'} пришёл по твоей ссылке и теперь в друзьях`, '#friends', now);
+    if (res.added && res.friendId) await addNotice(db, res.friendId, 'friend_joined', `По твоей ссылке пришёл друг: ${tgUser.firstName || 'Игрок'}`, '#friends', now);
     return json({ added: res.added, name: res.name, self: res.self });
   }
 
@@ -541,7 +546,7 @@ async function handleApi(request, env, url, now, ctx) {
     let me;
     if (period === 'all') {
       ({ results: rows } = await db.prepare(
-        'SELECT id, first_name, aura AS pts FROM users WHERE aura > 0 ORDER BY aura DESC, id LIMIT 50'
+        'SELECT id, first_name, photo_url, aura AS pts FROM users WHERE aura > 0 ORDER BY aura DESC, id LIMIT 50'
       ).all());
       const mine = await db.prepare('SELECT aura FROM users WHERE id = ?1').bind(tgUser.id).first();
       const above = await db.prepare('SELECT COUNT(*) AS n FROM users WHERE aura > ?1').bind(mine.aura).first();
@@ -549,7 +554,7 @@ async function handleApi(request, env, url, now, ctx) {
     } else {
       const weekStart = weekStartIso(now);
       ({ results: rows } = await db.prepare(
-        `SELECT u.id, u.first_name, SUM(p.points) AS pts
+        `SELECT u.id, u.first_name, u.photo_url, SUM(p.points) AS pts
          FROM predictions p JOIN users u ON u.id = p.user_id
          WHERE p.settled_at >= ?1 GROUP BY u.id HAVING pts > 0
          ORDER BY pts DESC, u.id LIMIT 50`
@@ -566,7 +571,7 @@ async function handleApi(request, env, url, now, ctx) {
     return json({
       period,
       me,
-      rows: rows.map((r, i) => ({ rank: i + 1, name: r.first_name || 'Игрок', pts: r.pts, isMe: r.id === tgUser.id }))
+      rows: rows.map((r, i) => ({ rank: i + 1, name: r.first_name || 'Игрок', photo: r.photo_url || null, pts: r.pts, isMe: r.id === tgUser.id }))
     });
   }
 
@@ -641,21 +646,41 @@ async function handleBot(request, env, url) {
   } else if (text.startsWith('/help')) {
     await botApi(env.BOT_TOKEN, 'sendMessage', { chat_id: msg.chat.id, text: 'Напиши вопрос или идею одним сообщением прямо сюда, ответим в этом чате.' });
   } else if (!text.startsWith('/')) {
-    // Обычное сообщение боту — обращение в поддержку. Пересылаем разработчику, не раскрывая его аккаунт.
     await ensureSchema(env.DB);
     const row = await env.DB.prepare("SELECT value FROM meta WHERE key = 'admin_chat'").first();
     const admin = row ? JSON.parse(row.value) : null;
-    if (admin && admin !== msg.chat.id) {
-      await botApi(env.BOT_TOKEN, 'forwardMessage', { chat_id: admin, from_chat_id: msg.chat.id, message_id: msg.message_id });
+    // Разработчик отвечает на пересланное обращение (Ответить) — бот отправляет ответ игроку.
+    if (admin && admin === msg.chat.id) {
+      const replyTo = msg.reply_to_message && msg.reply_to_message.message_id;
+      const target = replyTo
+        ? await env.DB.prepare('SELECT user_chat_id FROM support_map WHERE admin_msg_id = ?1').bind(replyTo).first()
+        : null;
+      if (!target) {
+        await botApi(env.BOT_TOKEN, 'sendMessage', { chat_id: admin, text: 'Чтобы ответить игроку, нажми «Ответить» на его пересланном сообщении.' });
+        return new Response('ok');
+      }
+      const sent = await botApi(env.BOT_TOKEN, 'sendMessage', { chat_id: target.user_chat_id, text: `💬 Ответ поддержки Точняка:\n\n${text}` });
+      await botApi(env.BOT_TOKEN, 'sendMessage', { chat_id: admin, text: sent && sent.ok ? '✅ Ответ отправлен.' : 'Не получилось отправить: возможно, игрок остановил бота.' });
+      return new Response('ok');
+    }
+    // Обычное сообщение боту — обращение в поддержку. Пересылаем разработчику и запоминаем, кому отвечать.
+    let forwarded = false;
+    if (admin) {
+      const fw = await botApi(env.BOT_TOKEN, 'forwardMessage', { chat_id: admin, from_chat_id: msg.chat.id, message_id: msg.message_id });
+      if (fw && fw.ok && fw.result) {
+        forwarded = true;
+        await env.DB.prepare('INSERT OR REPLACE INTO support_map (admin_msg_id, user_chat_id, created_at) VALUES (?1, ?2, ?3)')
+          .bind(fw.result.message_id, msg.chat.id, nowIso()).run();
+      }
     }
     await botApi(env.BOT_TOKEN, 'sendMessage', {
       chat_id: msg.chat.id,
-      text: admin ? 'Сообщение получили, ответим здесь же в течение пары дней.' : 'Напиши вопрос одним сообщением, мы ответим здесь же.'
+      text: forwarded ? 'Сообщение получили, ответим здесь же в течение пары дней.' : 'Спасибо! Поддержка пока не подключена, попробуй написать чуть позже.'
     });
   } else if (text.startsWith('/delete')) {
     await botApi(env.BOT_TOKEN, 'sendMessage', {
       chat_id: msg.chat.id,
-      text: 'Удалить аккаунт и все данные можно в приложении: Профиль → «Удалить аккаунт и данные».',
+      text: 'Удалить аккаунт и все данные можно в приложении: Профиль → «Удалить аккаунт».',
       reply_markup: { inline_keyboard: [[{ text: 'Открыть профиль', web_app: { url: `${appUrl}/#profile` } }]] }
     });
   }
@@ -674,7 +699,7 @@ async function handleInvitePage(env, url) {
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Точняк">
 <meta property="og:title" content="Тебе бросили вызов в Точняке 🎯">
-<meta property="og:description" content="Угадывай счёт матчей топ-лиг и обгоняй друзей. Бесплатно и без денег.">
+<meta property="og:description" content="Угадывай победителей и точный счёт матчей топ-лиг, обгоняй друзей. Бесплатно и без ставок.">
 <meta property="og:image" content="${img}">
 <meta property="og:image:width" content="941">
 <meta property="og:image:height" content="1672">

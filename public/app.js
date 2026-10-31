@@ -51,6 +51,10 @@ const isExact = (p, m) => Boolean(p && !isOutcome(p) && m.score && p.home === m.
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const initials = (name) => (String(name || '?').trim().split(/\s+/).map((p) => p[0]).join('').slice(0, 2) || '?').toUpperCase();
+// Аватарка из Telegram, а пока грузится или если её нет — буквы имени.
+const ava = (name, photo, cls = '') => `<span class="avatar ${cls}" aria-hidden="true">${esc(initials(name))}${photo
+  ? `<img src="${esc(photo)}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">` : ''}</span>`;
+const retryBtn = (view) => `<button type="button" class="btn btn-glass btn-inline" data-go="${view}">Обновить</button>`;
 const league = (m) => LEAGUES[m.competition] || m.competitionName;
 const icon = (id) => `<svg class="ic" aria-hidden="true"><use href="#${id}"/></svg>`;
 
@@ -100,7 +104,9 @@ function crest(team, size = '') {
 }
 document.addEventListener('error', (e) => {
   const img = e.target;
-  if (!img || img.tagName !== 'IMG' || !img.parentElement || !img.parentElement.classList.contains('crest')) return;
+  if (!img || img.tagName !== 'IMG' || !img.parentElement) return;
+  if (img.parentElement.classList.contains('avatar')) { img.remove(); return; }
+  if (!img.parentElement.classList.contains('crest')) return;
   const tla = document.createElement('span');
   tla.className = 'crest-tla';
   tla.textContent = img.dataset.tla || '';
@@ -182,7 +188,7 @@ async function boot() {
         ? 'Мы обновили регистрацию. Подтверди правила и привяжи номер, чтобы друзья могли тебя найти. Аура и прогнозы останутся.'
         : 'Угадай счёт. Копи ауру. Обгоняй друзей.';
       $('login-name').textContent = me.firstName || 'Игрок';
-      $('login-avatar').textContent = initials(me.firstName);
+      $('login-avatar').outerHTML = ava(me.firstName, me.photo).replace('<span class="avatar ', '<span id="login-avatar" class="avatar ');
       showGate('gate-login');
       openLegalFromHash();
       return;
@@ -310,7 +316,7 @@ function renderTop() {
   $('top-aura').textContent = p.aura.toLocaleString('ru-RU');
   $('top-coins').textContent = (p.coins || 0).toLocaleString('ru-RU');
   $('shop-coins').textContent = (p.coins || 0).toLocaleString('ru-RU');
-  $('top-avatar').textContent = initials(p.firstName);
+  $('top-avatar').outerHTML = ava(p.firstName, p.photo, 'avatar-sm').replace('<span class="avatar ', '<span id="top-avatar" class="avatar ');
   setBadge(p.unread || 0);
 }
 
@@ -449,7 +455,7 @@ async function loadMatches() {
     state.matches = data.matches;
     renderMatches();
   } catch (err) {
-    $('match-list').innerHTML = `<div class="glass empty"><b>Матчи не загрузились</b>${esc(err.message)}</div>`;
+    $('match-list').innerHTML = `<div class="glass empty"><b>Матчи не загрузились</b>${esc(err.message)}${retryBtn('matches')}</div>`;
   }
 }
 
@@ -635,7 +641,7 @@ function renderResultSheet(m) {
       : m.status === 'POSTPONED' ? '<span class="status">Матч перенесён</span>'
         : '<span class="status">Приём прогнозов закрыт</span>';
   let mine;
-  if (!p) mine = '<div class="mine mine-empty">Ты не делал прогноз</div>';
+  if (!p) mine = '<div class="mine mine-empty">Прогноза на этот матч нет</div>';
   else {
     const exact = p.points != null && isExact(p, m);
     const pts = p.points == null ? '<span class="muted">ждём финал</span>' : `<b class="num ${p.points > 0 ? 'pts-hit' : ''}">+${p.points}</b>`;
@@ -704,7 +710,7 @@ async function loadMy() {
     state.my = data.items;
     renderMy();
   } catch (err) {
-    $('my-list').innerHTML = `<div class="glass empty"><b>Не загрузилось</b>${esc(err.message)}</div>`;
+    $('my-list').innerHTML = `<div class="glass empty"><b>Не загрузилось</b>${esc(err.message)}${retryBtn('my')}</div>`;
   }
 }
 
@@ -727,7 +733,7 @@ function renderMy() {
       : '<div class="glass empty"><b>Пока ничего не сыграно</b>Итоги появятся после финального свистка</div>';
     return;
   }
-  $('my-list').innerHTML = (state.mytab === 'wait' ? `<p class="tz-note">${icon('i-clock')}Крупно твой прогноз, ниже время матча по МСК</p>` : '')
+  $('my-list').innerHTML = (state.mytab === 'wait' ? `<p class="tz-note">${icon('i-clock')}Слева твой прогноз и время матча по МСК</p>` : '')
     + `<div class="glass list-card">${items.map(myRow).join('')}</div>`;
 }
 
@@ -738,12 +744,11 @@ function myRow(m) {
   if (isDone(m)) right = `<span class="my-pts ${p.points > 0 ? 'pts-hit' : 'pts-zero'} num">+${p.points}</span>`;
   else if (m.open) right = '<span class="tag tag-open">Изменить</span>';
   else right = `<span class="tag tag-none">${LIVE.includes(m.status) ? 'идёт' : 'ждём'}</span>`;
-  const sub = isDone(m) ? `счёт ${m.score.home}:${m.score.away}`
-    : LIVE.includes(m.status) ? (m.score ? `сейчас ${m.score.home}:${m.score.away}` : 'идёт') : whenTiny(m.utcDate);
-  return `<button type="button" class="match-row" data-match="${m.id}" aria-label="${esc(`${m.home.short} — ${m.away.short}`)}">
-    <span class="pair">${crest(m.home)}<span class="mid"><span class="mid-main num">${predText(p)}</span><span class="mid-sub">${esc(sub)}</span></span>${crest(m.away)}</span>
-    ${exact ? '<span class="stamp stamp-sm">ТОЧНЯК!</span>' : ''}
-    ${right}
+  const sub = isDone(m) || LIVE.includes(m.status) ? (exact ? 'точняк!' : isOutcome(p) ? 'исход' : 'прогноз') : whenTiny(m.utcDate);
+  return `<button type="button" class="match-row mr" data-match="${m.id}" aria-label="${esc(`${m.home.short} — ${m.away.short}`)}">
+    <span class="mr-time my-pick${exact ? ' exact' : ''}"><b class="num">${predText(p)}</b><span>${esc(sub)}</span></span>
+    <span class="mr-teams">${teamLine(m, 'home')}${teamLine(m, 'away')}</span>
+    <span class="mr-side">${right}</span>
   </button>`;
 }
 
@@ -764,7 +769,7 @@ async function loadFriends() {
     state.friendRows = data.rows;
     $('friends-list').innerHTML = `<div class="glass list-card">${data.rows.map((r) => {
       const inner = `<span class="lb-rank num">${r.rank}</span>
-        <span class="avatar avatar-sm" aria-hidden="true">${esc(initials(r.name))}</span>
+        ${ava(r.name, r.photo, 'avatar-sm')}
         <span class="lb-name">${r.isMe ? 'Ты' : esc(r.name)}</span>
         <span class="lb-pts num">${r.pts}${icon('i-target')}</span>`;
       if (r.isMe) return `<div class="lb-row me">${inner}<span class="fight-ic fight-ghost" aria-hidden="true"></span></div>`;
@@ -772,7 +777,7 @@ async function loadFriends() {
         <button type="button" class="fight-ic" data-challenge="${esc(r.code)}" data-name="${esc(r.name)}" aria-label="Бой с ${esc(r.name)}">${icon('i-swords')}</button></div>`;
     }).join('')}</div>`;
   } catch (err) {
-    $('friends-list').innerHTML = `<div class="glass empty"><b>Не загрузилось</b>${esc(err.message)}</div>`;
+    $('friends-list').innerHTML = `<div class="glass empty"><b>Не загрузилось</b>${esc(err.message)}${retryBtn('friends')}</div>`;
   }
 }
 
@@ -784,7 +789,7 @@ async function friendLink() {
   return state.friendLink;
 }
 
-const INVITE_TEXT = 'Бросаю тебе вызов в Точняке 🎯 Угадываем счёт матчей, в конце недели смотрим, кто точнее';
+const INVITE_TEXT = 'Бросаю тебе вызов в Точняке 🎯 Угадываем победителей и счёт матчей, в конце недели смотрим, кто точнее';
 
 // Приглашение с картинкой и кнопкой. На телефоне — готовое сообщение через Telegram,
 // на компьютере и если что-то пошло не так — обычное окно «Поделиться» со ссылкой.
@@ -926,7 +931,7 @@ function openFriend(code) {
   if (!r) return;
   openPanel('<span class="league-tag">Друг</span>', `
     <div class="friend-card">
-      <span class="avatar avatar-lg" aria-hidden="true">${esc(initials(r.name))}</span>
+      ${ava(r.name, r.photo, 'avatar-lg')}
       <b>${esc(r.name)}</b>
       <span class="muted small">${r.rank} место · <span class="num">${r.pts}</span> ауры ${state.fperiod === 'week' ? 'за неделю' : 'всего'}</span>
     </div>
@@ -962,12 +967,12 @@ async function loadRating() {
     $('rating-list').innerHTML = `<div class="glass list-card">${data.rows.map((r) => `
       <div class="lb-row${r.isMe ? ' me' : ''}">
         <span class="lb-rank num">${r.rank}</span>
-        <span class="avatar avatar-sm" aria-hidden="true">${esc(initials(r.name))}</span>
+        ${ava(r.name, r.photo, 'avatar-sm')}
         <span class="lb-name">${r.isMe ? 'Ты' : esc(r.name)}</span>
         <span class="lb-pts num">${r.pts}</span>
       </div>`).join('')}</div>`;
   } catch (err) {
-    $('rating-list').innerHTML = `<div class="glass empty"><b>Рейтинг не загрузился</b>${esc(err.message)}</div>`;
+    $('rating-list').innerHTML = `<div class="glass empty"><b>Рейтинг не загрузился</b>${esc(err.message)}${retryBtn('rating')}</div>`;
   }
 }
 
@@ -1052,7 +1057,7 @@ function openLegal(tab) {
   openPanel('<span class="league-tag">Документы</span>', `
     <div class="glass segmented" role="tablist">
       <button type="button" role="tab" data-legal="terms" aria-selected="${key === 'terms'}">Правила</button>
-      <button type="button" role="tab" data-legal="privacy" aria-selected="${key === 'privacy'}">Конфиденциальность</button>
+      <button type="button" role="tab" data-legal="privacy" aria-selected="${key === 'privacy'}">Данные</button>
     </div>
     <article class="doc"><h3>${esc(doc.title)}</h3>${doc.html}</article>
     <button type="button" class="btn ${atGate ? 'btn-primary' : 'btn-glass'}" data-close${atGate ? ' data-agree' : ''}>${atGate ? 'Понятно, принимаю' : 'Закрыть'}</button>`, { legal: key });
@@ -1075,7 +1080,7 @@ function confirmDialog(text) {
 }
 
 $('delete-btn').addEventListener('click', async () => {
-  const ok = await confirmDialog('Удалить аккаунт? Аура, прогнозы, друзья и место в рейтинге сотрутся навсегда.');
+  const ok = await confirmDialog('Удалить аккаунт? Аура, монеты, персонажи, прогнозы, друзья и бои сотрутся навсегда.');
   if (!ok) return;
   try {
     await api('/api/me', { method: 'DELETE' });
@@ -1105,7 +1110,7 @@ async function loadShop() {
     if (!state.shopPick || !state.shop.items.some((i) => i.id === state.shopPick)) state.shopPick = state.shop.selected;
     renderShop();
   } catch (err) {
-    $('shop-grid').innerHTML = `<div class="glass empty"><b>Магазин не загрузился</b>${esc(err.message)}</div>`;
+    $('shop-grid').innerHTML = `<div class="glass empty"><b>Магазин не загрузился</b>${esc(err.message)}${retryBtn('shop')}</div>`;
   }
 }
 
@@ -1229,12 +1234,12 @@ function showIncomingBattle() {
   openPanel('<span class="league-tag">Вызов на бой</span>', `
     <div class="invite-pop">
       <span class="invite-pop-vs">
-        <span class="avatar avatar-lg" aria-hidden="true">${esc(initials(b.opponent.name))}</span>
+        ${ava(b.opponent.name, b.opponent.photo, 'avatar-lg')}
         <span class="invite-pop-ic">${icon('i-swords')}</span>
-        <span class="avatar avatar-lg" aria-hidden="true">${esc(initials(state.profile && state.profile.firstName))}</span>
+        ${ava(state.profile && state.profile.firstName, state.profile && state.profile.photo, 'avatar-lg')}
       </span>
       <b>${esc(b.opponent.name)} вызывает тебя на бой</b>
-      <span class="muted">${b.total} ${plural(b.total, ['матч', 'матча', 'матчей'])}. Поставь свои счета, пока матчи не начались. Кто точнее, тот и победил.</span>
+      <span class="muted">${b.total} ${plural(b.total, ['матч', 'матча', 'матчей'])}, ${b.mode === 'outcome' ? 'на победу. Выбери, кто победит' : 'на точный счёт. Поставь свои счета'}, пока матчи не начались. Кто точнее, тот и выиграл бой.</span>
     </div>
     <button type="button" class="btn btn-primary" data-battle="${esc(b.id)}">${icon('i-swords')}Открыть бой</button>
     <button type="button" class="btn btn-ghost" data-close>Позже</button>`, { invite: b.id });
@@ -1285,7 +1290,7 @@ function battleLabel(b) {
     if (b.result === 'lose') return ['Поражение', 'lose'];
     return ['Ничья', 'draw'];
   }
-  if (b.status === 'declined') return [b.role === 'creator' ? 'Отказался' : 'Ты отказался', 'mute'];
+  if (b.status === 'declined') return [b.role === 'creator' ? 'Отклонён' : 'Отклонён', 'mute'];
   if (b.status === 'cancelled') return ['Отменён', 'mute'];
   if (b.status === 'expired') return ['Не состоялся', 'mute'];
   if (b.needsMyPicks) return [b.status === 'pending' ? 'Тебя вызвали' : 'Поставь счёт', 'hot'];
@@ -1310,7 +1315,7 @@ function renderBattles() {
       const sub = b.status === 'done' ? `${b.total} ${plural(b.total, ['матч', 'матча', 'матчей'])} сыграно`
         : `${b.total} ${plural(b.total, ['матч', 'матча', 'матчей'])}${b.decided ? ` · сыграно ${b.decided}` : ''}`;
       return `<button type="button" class="battle-row" data-battle="${esc(b.id)}">
-        <span class="avatar avatar-sm" aria-hidden="true">${esc(initials(b.opponent.name))}</span>
+        ${ava(b.opponent.name, b.opponent.photo, 'avatar-sm')}
         <span class="battle-row-main"><b>${esc(b.opponent.name)}</b><span>${esc(sub)}</span></span>
         ${scored ? `<span class="battle-row-score num">${b.score.me}:${b.score.them}</span>` : ''}
         <span class="bstate bstate-${cls}">${label}</span>
@@ -1341,7 +1346,8 @@ function stepPick(spec) {
 // Новый бой: выбор матчей и свои счета.
 async function newBattle(code, name) {
   haptic('light');
-  state.draft = { code, name, mode: 'outcome', picks: new Map() };
+  const fr = (state.friendRows || []).find((x) => x.code === code);
+  state.draft = { code, name, photo: fr ? fr.photo : null, mode: 'outcome', picks: new Map() };
   go('battle-new');
   $('bn-list').innerHTML = '<div class="glass empty"><span class="spinner" aria-hidden="true"></span></div>';
   renderDraft();
@@ -1379,9 +1385,9 @@ function renderDraft() {
   const d = state.draft;
   if (!d) return;
   $('bn-friend').innerHTML = `<div class="glass versus-chip">
-    <span class="avatar avatar-sm" aria-hidden="true">${esc(initials(state.profile && state.profile.firstName))}</span><b>Ты</b>
+    ${ava(state.profile && state.profile.firstName, state.profile && state.profile.photo, 'avatar-sm')}<b>Ты</b>
     <span class="vs-mark">${icon('i-swords')}</span>
-    <b>${esc(d.name)}</b><span class="avatar avatar-sm" aria-hidden="true">${esc(initials(d.name))}</span>
+    <b>${esc(d.name)}</b>${ava(d.name, d.photo, 'avatar-sm')}
   </div>
   <div class="glass segmented" role="tablist" aria-label="Режим боя">
     <button type="button" role="tab" data-bmode="outcome" aria-selected="${d.mode === 'outcome'}">На победу</button>
@@ -1475,8 +1481,8 @@ function battleNote(b) {
   if (b.status === 'pending' && b.role === 'creator') return `Ждём, когда ${name} примет бой и ${what}.`;
   if (b.status === 'pending') return `${name} вызывает тебя. ${b.mode === 'outcome' ? 'Выбери, кто победит' : 'Поставь свои счета'} и прими бой.`;
   if (b.status === 'active') return b.decided ? `Сыграно ${b.decided} из ${b.total}.` : 'Бой принят. Ждём матчи.';
-  if (b.status === 'done') return b.result === 'win' ? 'Ты оказался точнее.' : b.result === 'lose' ? `${name} оказался точнее.` : 'Одинаково точно.';
-  if (b.status === 'declined') return b.role === 'creator' ? `${name} отказался от боя.` : 'Ты отказался от этого боя.';
+  if (b.status === 'done') return b.result === 'win' ? 'Ты точнее. Красиво!' : b.result === 'lose' ? `В этот раз точнее ${name}.` : 'Одинаково точно.';
+  if (b.status === 'declined') return b.role === 'creator' ? `${name}: бой отклонён.` : 'Бой отклонён.';
   return 'Матчи начались раньше, чем бой приняли.';
 }
 
@@ -1553,9 +1559,9 @@ function renderBattle() {
   $('battle-body').innerHTML = `
     <div class="glass bhero bhero-${cls}">
       <div class="bhero-vs">
-        <span class="bside"><span class="avatar" aria-hidden="true">${esc(initials(me))}</span><b>Ты</b></span>
+        <span class="bside">${ava(me, state.profile && state.profile.photo)}<b>Ты</b></span>
         <span class="bscore num">${b.score.me}<i>:</i>${b.score.them}</span>
-        <span class="bside"><span class="avatar" aria-hidden="true">${esc(initials(b.opponent.name))}</span><b>${esc(b.opponent.name)}</b></span>
+        <span class="bside">${ava(b.opponent.name, b.opponent.photo)}<b>${esc(b.opponent.name)}</b></span>
       </div>
       ${big}
       <p class="bhero-note">${battleNote(b)}</p>
@@ -1593,7 +1599,7 @@ async function battleAction(action) {
     try {
       await api(`/api/battles/${b.id}/close`, { method: 'POST' });
       haptic('success');
-      toast(b.role === 'opponent' ? 'Ты отказался от боя' : 'Бой отменён');
+      toast(b.role === 'opponent' ? 'Бой отклонён' : 'Бой отменён');
       state.battle = null;
       go('friends');
     } catch (err) { toast(err.message); }

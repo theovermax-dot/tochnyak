@@ -52,8 +52,15 @@ export async function validateInitData(initData, botToken, { maxAgeSeconds = 864
     id: user.id,
     firstName: String(user.first_name || '').slice(0, 64),
     username: user.username ? String(user.username).slice(0, 64) : null,
-    languageCode: user.language_code ? String(user.language_code).slice(0, 8) : null
+    languageCode: user.language_code ? String(user.language_code).slice(0, 8) : null,
+    photoUrl: safePhoto(user.photo_url)
   };
+}
+
+// Аватарка из Telegram: принимаем только ссылки на серверы Telegram.
+export function safePhoto(url) {
+  const u = String(url || '');
+  return /^https:\/\/(t\.me|telegram\.org|[a-z0-9-]+\.telegram\.org|cdn\d*\.telesco\.pe)\/[^\s"'<>]{1,400}$/i.test(u) ? u : null;
 }
 
 export async function botApi(botToken, method, payload) {

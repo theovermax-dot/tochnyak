@@ -2,7 +2,7 @@
 // поэтому отдельные миграции из консоли запускать не нужно.
 //
 // Храним минимум: id Telegram, имя, username и язык. Номер телефона — только если игрок
-// сам поделился им через кнопку Telegram, чтобы друзья могли найти его. Фамилию и фото не храним.
+// сам поделился им через кнопку Telegram, чтобы друзья могли найти его. Фамилию не храним, фото — только ссылкой на аватарку Telegram.
 
 const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS users (
@@ -97,7 +97,13 @@ const SCHEMA = [
     created_at TEXT NOT NULL,
     read_at TEXT
   )`,
-  `CREATE INDEX IF NOT EXISTS notifications_by_user ON notifications (user_id, id)`
+  `CREATE INDEX IF NOT EXISTS notifications_by_user ON notifications (user_id, id)`,
+  // Обращения в поддержку: какое пересланное сообщение у разработчика от какого игрока.
+  `CREATE TABLE IF NOT EXISTS support_map (
+    admin_msg_id INTEGER PRIMARY KEY,
+    user_chat_id INTEGER NOT NULL,
+    created_at TEXT NOT NULL
+  )`
 ];
 
 // Колонки, добавленные после первого запуска. ALTER падает, если колонка уже есть, это нормально.
@@ -113,7 +119,9 @@ const COLUMNS = [
   // score — точный счёт, outcome — только исход (П1 / ничья / П2).
   "ALTER TABLE predictions ADD COLUMN kind TEXT NOT NULL DEFAULT 'score'",
   // Режим боя: outcome — на победу (П1 / Х / П2), score — на точный счёт.
-  "ALTER TABLE battles ADD COLUMN mode TEXT NOT NULL DEFAULT 'score'"
+  "ALTER TABLE battles ADD COLUMN mode TEXT NOT NULL DEFAULT 'score'",
+  // Ссылка на аватарку из Telegram (обновляется при каждом входе).
+  'ALTER TABLE users ADD COLUMN photo_url TEXT'
 ];
 
 async function migrate(db) {

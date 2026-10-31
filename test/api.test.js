@@ -187,7 +187,7 @@ test('мои прогнозы и эмблемы клубов', async () => {
 });
 
 test('приглашение: подпись, готовое сообщение и страница с превью', async () => {
-  assert.match(inviteCaption('<Макс>'), /Вызов от &lt;Макс&gt;/);
+  assert.match(inviteCaption('<Макс>'), /&lt;Макс&gt; бросает тебе вызов/);
   const env = makeEnv();
   const r0 = await call(env, '/api/auth', { user: max, method: 'POST', body: { accept: true } });
   const code = r0.data.profile.friendCode;
@@ -497,4 +497,39 @@ test('бой на победу: по умолчанию, 1 очко за уга�
   r = await call(env, `/api/battles/${id}`, { user: max });
   assert.deepEqual(r.data.battle.score, { me: 1, them: 0 });
   assert.equal(r.data.battle.result, 'win');
+});
+
+test('поддержка: обращение пересылается разработчику, ответ уходит игроку', async () => {
+  const env = makeEnv();
+  await call(env, '/api/me', { user: max });
+  const sent = [];
+  let nextId = 900;
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (u, init) => {
+    const body = JSON.parse(init.body);
+    sent.push({ method: String(u).split('/').pop(), body });
+    return new Response(JSON.stringify({ ok: true, result: { message_id: nextId++ } }));
+  };
+  const hook = (message) => worker.fetch(new Request('https://tochnyak.test/bot/webhook', {
+    method: 'POST', headers: { 'x-telegram-bot-api-secret-token': 'test-secret', 'content-type': 'application/json' },
+    body: JSON.stringify({ message })
+  }), env);
+  try {
+    await hook({ message_id: 1, chat: { id: 555 }, from: { id: 555 }, text: '/admin test-secret' });
+    await hook({ message_id: 2, chat: { id: 2 }, from: { id: 2 }, text: 'Не грузятся матчи' });
+    const fw = sent.find((x) => x.method === 'forwardMessage');
+    assert.equal(fw.body.chat_id, 555);
+    assert.match(sent.at(-1).body.text, /ответим здесь же/);
+    const adminMsgId = 901;
+    sent.length = 0;
+    await hook({ message_id: 3, chat: { id: 555 }, from: { id: 555 }, text: 'Уже починили!', reply_to_message: { message_id: adminMsgId } });
+    assert.equal(sent[0].body.chat_id, 2);
+    assert.match(sent[0].body.text, /Ответ поддержки Точняка:\n\nУже починили!/);
+    assert.match(sent[1].body.text, /Ответ отправлен/);
+    sent.length = 0;
+    await hook({ message_id: 4, chat: { id: 555 }, from: { id: 555 }, text: 'просто текст' });
+    assert.match(sent[0].body.text, /нажми «Ответить»/);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
 });

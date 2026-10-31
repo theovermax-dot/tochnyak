@@ -93,7 +93,7 @@ export async function createBattle(db, { userId, friendCode, picks, mode = 'outc
 }
 
 async function battleRow(db, id, userId) {
-  const b = await db.prepare(`SELECT b.*, c.first_name AS creator_name, o.first_name AS opponent_name
+  const b = await db.prepare(`SELECT b.*, c.first_name AS creator_name, o.first_name AS opponent_name, c.photo_url AS creator_photo, o.photo_url AS opponent_photo
     FROM battles b LEFT JOIN users c ON c.id = b.creator_id LEFT JOIN users o ON o.id = b.opponent_id
     WHERE b.id = ?1`).bind(id).first();
   if (!b || (b.creator_id !== userId && b.opponent_id !== userId)) return null;
@@ -173,7 +173,7 @@ function summarize(b, matches, picks, userId, now, lockMs) {
     status,
     mode: b.mode || 'score',
     role: meIsCreator ? 'creator' : 'opponent',
-    opponent: { name: (meIsCreator ? b.opponent_name : b.creator_name) || 'Друг' },
+    opponent: { name: (meIsCreator ? b.opponent_name : b.creator_name) || 'Друг', photo: (meIsCreator ? b.opponent_photo : b.creator_photo) || null },
     createdAt: b.created_at,
     score: { me: my, them: their },
     decided,
@@ -203,7 +203,7 @@ function assemble(b, parts, userId, now, lockMs) {
 }
 
 export async function listBattles(db, { userId, now, lockMs }) {
-  const { results } = await db.prepare(`SELECT b.*, c.first_name AS creator_name, o.first_name AS opponent_name
+  const { results } = await db.prepare(`SELECT b.*, c.first_name AS creator_name, o.first_name AS opponent_name, c.photo_url AS creator_photo, o.photo_url AS opponent_photo
     FROM battles b LEFT JOIN users c ON c.id = b.creator_id LEFT JOIN users o ON o.id = b.opponent_id
     WHERE (b.creator_id = ?1 OR b.opponent_id = ?1) AND b.status IN ('pending', 'active')
        OR ((b.creator_id = ?1 OR b.opponent_id = ?1) AND b.status = 'declined' AND b.created_at >= ?2)

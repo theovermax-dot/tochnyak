@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { validateInitData } from '../src/telegram.js';
+import { safePhoto, validateInitData } from '../src/telegram.js';
 import { signInitData } from './helpers.js';
 
 const TOKEN = '123456:TEST_TOKEN_FOR_TESTS_ONLY';
@@ -9,7 +9,7 @@ const user = { id: 42, first_name: 'Макс', last_name: 'Скрыто', userna
 test('правильная подпись принимается, фамилия не сохраняется', async () => {
   const initData = await signInitData(TOKEN, user);
   const result = await validateInitData(initData, TOKEN);
-  assert.deepEqual(result, { id: 42, firstName: 'Макс', username: 'tester', languageCode: 'ru' });
+  assert.deepEqual(result, { id: 42, firstName: 'Макс', username: 'tester', languageCode: 'ru', photoUrl: null });
 });
 
 test('подпись чужим токеном отклоняется', async () => {
@@ -33,4 +33,11 @@ test('устаревшие данные отклоняются', async () => {
 test('пустые данные отклоняются', async () => {
   assert.equal(await validateInitData('', TOKEN), null);
   assert.equal(await validateInitData('hash=abc', TOKEN), null);
+});
+
+test('аватарка: только ссылки Telegram', () => {
+  assert.equal(safePhoto('https://t.me/i/userpic/320/abc.svg'), 'https://t.me/i/userpic/320/abc.svg');
+  assert.equal(safePhoto('https://evil.example/x.jpg'), null);
+  assert.equal(safePhoto('javascript:alert(1)'), null);
+  assert.equal(safePhoto('https://t.me/i/"onerror="x'), null);
 });
