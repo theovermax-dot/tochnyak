@@ -648,3 +648,18 @@ button, a, [role="button"] { touch-action: manipulation; }
 .days > .day, #bn-list > .day { content-visibility: auto; contain-intrinsic-size: auto 400px; }
 .view { animation: viewIn .18s ease-out; }
 @keyframes viewIn { from { opacity: 0; transform: translateY(4px); } }
+
+/* Окно «Позвать друга» */
+.share-lead { margin: -2px 2px 0; font-size: 14px; line-height: 1.45; color: var(--muted); font-weight: 600; }
+.btn-tg { background: #2AABEE; box-shadow: inset 0 1px 0 rgba(255,255,255,.25), 0 10px 26px rgba(42, 171, 238, 0.35); }
+.btn-tg .ic { width: 22px; height: 22px; }
+.share-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.share-app { display: flex; flex-direction: column; align-items: center; gap: 7px; padding: 10px 2px; border: none; border-radius: 18px; background: none; color: var(--ink); font-size: 12px; font-weight: 700; }
+.share-app:active { background: rgba(255, 255, 255, 0.05); }
+.share-ic { width: 54px; height: 54px; border-radius: 18px; display: inline-flex; align-items: center; justify-content: center; color: #fff; box-shadow: inset 0 1px 0 rgba(255,255,255,.2); }
+.share-ic .ic { width: 28px; height: 28px; stroke-width: 1.8; }
+.share-link { display: flex; align-items: center; gap: 10px; padding: 6px 6px 6px 14px; border-radius: 18px; background: rgba(255, 255, 255, 0.05); border: 1px solid var(--glass-line); }
+.share-url { flex: 1; min-width: 0; font-size: 14px; font-weight: 700; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; -webkit-user-select: text; user-select: text; }
+.share-link .btn { width: auto; min-height: 42px; padding: 0 14px; font-size: 14px; border-radius: 14px; flex: none; }
+.share-link .btn-square { width: 42px; padding: 0; }
+.share-url { font-size: 13px; }

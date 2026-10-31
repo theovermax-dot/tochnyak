@@ -165,12 +165,12 @@ function showGate(which) {
   $('app').hidden = true;
 }
 
+// Кто пригласил: код f_xxxxxxxx или ник из ссылки t.me/tochnyak_bot?startapp=<ник>.
 function readRef() {
   const fromUrl = new URLSearchParams(location.search).get('f');
   const start = tg && tg.initDataUnsafe ? tg.initDataUnsafe.start_param : '';
-  const fromStart = /^f_([a-z0-9]{8})$/.exec(start || '');
-  const code = fromUrl || (fromStart && fromStart[1]);
-  return /^[a-z0-9]{8}$/.test(code || '') ? code : null;
+  const ref = fromUrl || start || '';
+  return /^(f_[a-z0-9]{8}|[a-z0-9]{8}|[A-Za-z][A-Za-z0-9_]{3,31})$/.test(ref) ? ref : null;
 }
 
 async function boot() {
@@ -777,7 +777,7 @@ async function loadFriends() {
 
 function renderFriends(data) {
   {
-    state.friendLink = data.shareLink || data.link;
+    state.friendLink = data.link || data.shareLink;
     if (data.rows.length <= 1) {
       $('friends-list').innerHTML = `<div class="glass empty friends-empty">
         <svg class="ic ic-xl" aria-hidden="true"><use href="#i-users"/></svg>
@@ -801,12 +801,12 @@ function renderFriends(data) {
 async function friendLink() {
   if (!state.friendLink) {
     const data = await api('/api/friends');
-    state.friendLink = data.shareLink || data.link;
+    state.friendLink = data.link || data.shareLink;
   }
   return state.friendLink;
 }
 
-const INVITE_TEXT = 'Бросаю тебе вызов в Точняке 🎯 Угадываем победителей и счёт матчей, в конце недели смотрим, кто точнее';
+const INVITE_TEXT = 'Бросаю тебе вызов в Точняке 🎯 Угадываем победителей и счёт футбольных матчей, в конце недели смотрим, кто точнее. Заходи:';
 
 // Приглашение с картинкой и кнопкой. На телефоне — готовое сообщение через Telegram,
 // на компьютере и если что-то пошло не так — обычное окно «Поделиться» со ссылкой.
@@ -846,10 +846,79 @@ async function shareInvite() {
   await shareLink();
 }
 
-$('invite-btn').addEventListener('click', async () => {
-  const btn = $('invite-btn');
-  btn.disabled = true;
-  try { await shareInvite(); } catch (err) { toast(err.message); } finally { btn.disabled = false; }
+// ---------- Окно «Позвать друга»: Telegram, WhatsApp, Instagram, VK, системное «Поделиться» ----------
+
+const SHARE_APPS = [
+  { id: 'wa', name: 'WhatsApp', color: '#25D366', glyph: '<path d="M12 3.5a8.5 8.5 0 0 0-7.3 12.8L3.5 20.5l4.3-1.1A8.5 8.5 0 1 0 12 3.5z"/><path d="M9 8.5c.3 2.6 2.4 5.2 5.4 6l1.1-1.3-1.8-1-.9.8c-1-.4-1.9-1.3-2.4-2.4l.8-.9-1-1.8z" fill="currentColor" stroke="none"/>' },
+  { id: 'ig', name: 'Instagram', color: 'linear-gradient(45deg,#f9a825,#e91e63 50%,#7b1fa2)', glyph: '<rect x="4" y="4" width="16" height="16" rx="5"/><circle cx="12" cy="12" r="3.6"/><circle cx="17" cy="7" r=".9" fill="currentColor"/>' },
+  { id: 'vk', name: 'VK', color: '#0077FF', glyph: '<path d="M4 7.5h2.6c.3 3.3 1.8 5 3 5.3V7.5h2.4v2.9c1.2-.1 2.4-1.5 2.9-2.9h2.4c-.4 1.9-1.8 3.3-2.8 3.9 1 .5 2.6 1.7 3.2 4h-2.6c-.5-1.5-1.7-2.7-3.1-2.8v2.8h-.3C7.1 15.4 4.2 12.6 4 7.5z" fill="currentColor" stroke="none"/>' },
+  { id: 'more', name: 'Ещё', color: 'rgba(255,255,255,.12)', glyph: '<circle cx="6" cy="12" r="1.4" fill="currentColor"/><circle cx="12" cy="12" r="1.4" fill="currentColor"/><circle cx="18" cy="12" r="1.4" fill="currentColor"/>' }
+];
+
+const prettyLink = (link) => String(link || '').replace(/^https?:\/\//, '');
+
+async function openInviteSheet() {
+  haptic('light');
+  let link = '';
+  try { link = await friendLink(); } catch (err) { toast(err.message); return; }
+  openPanel('<span class="league-tag">Позвать друга</span>', `
+    <p class="share-lead">Друг перейдёт по ссылке, войдёт через Telegram и сразу появится у тебя в друзьях.</p>
+    <button type="button" class="btn btn-primary btn-tg" data-share="tg"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 4.5L2.8 11.4c-.9.4-.9 1.5 0 1.8l4.4 1.5 1.7 5.3c.2.6 1 .8 1.5.3l2.5-2.3 4.5 3.3c.6.4 1.4.1 1.6-.6L22.2 5.7c.2-.9-.6-1.5-1.2-1.2zM9.5 14.2l8.2-6.6-6.6 7.6-.3 3.1z" fill="currentColor" stroke="none"/></svg>Отправить в Telegram</button>
+    <div class="share-grid">${SHARE_APPS.map((a) => `
+      <button type="button" class="share-app" data-share="${a.id}">
+        <span class="share-ic" style="background:${a.color}"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true">${a.glyph}</svg></span>
+        <span>${a.name}</span>
+      </button>`).join('')}</div>
+    <div class="share-link">
+      <span class="share-url">${esc(prettyLink(link))}</span>
+      <button type="button" class="btn btn-glass btn-square" id="sheet-copy" aria-label="Скопировать ссылку">${icon('i-copy')}</button>
+    </div>`, { shareSheet: true });
+}
+
+$('invite-btn').addEventListener('click', openInviteSheet);
+
+function openExternal(url) {
+  try { if (tg && tg.openLink) { tg.openLink(url); return; } } catch { /* ниже запасной вариант */ }
+  window.open(url, '_blank');
+}
+
+async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); return true; } catch { /* ниже запасной вариант */ }
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text; ta.setAttribute('readonly', ''); ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    const ok = document.execCommand('copy');
+    ta.remove();
+    return ok;
+  } catch { return false; }
+}
+
+document.addEventListener('click', async (e) => {
+  const btn = e.target.closest('[data-share]');
+  if (!btn) return;
+  const kind = btn.dataset.share;
+  haptic('light');
+  try {
+    const link = await friendLink();
+    const message = `${INVITE_TEXT} ${link}`;
+    if (kind === 'tg') { closeSheet(); await shareInvite(); return; }
+    if (kind === 'wa') { openExternal(`https://wa.me/?text=${encodeURIComponent(message)}`); return; }
+    if (kind === 'vk') { openExternal(`https://vk.com/share.php?url=${encodeURIComponent(link)}&title=${encodeURIComponent(INVITE_TEXT)}`); return; }
+    if (kind === 'ig') {
+      // Instagram не умеет принимать текст по ссылке: копируем приглашение и открываем Директ.
+      if (await copyText(message)) toast('Приглашение скопировано, вставь его в Директ');
+      openExternal('https://www.instagram.com/direct/inbox/');
+      return;
+    }
+    if (kind === 'more') {
+      if (navigator.share) {
+        try { await navigator.share({ text: INVITE_TEXT, url: link }); return; } catch (err) { if (err && err.name === 'AbortError') return; }
+      }
+      if (await copyText(message)) toast('Скопировано, вставь в любой мессенджер');
+      else toast('Не получилось скопировать');
+    }
+  } catch (err) { toast(err.message); }
 });
 
 // Добавить друга по @username или номеру.
@@ -906,7 +975,7 @@ document.addEventListener('submit', async (e) => {
 });
 
 document.addEventListener('click', async (e) => {
-  if (e.target.closest('#sheet-invite')) { try { await shareInvite(); } catch (err) { toast(err.message); } return; }
+  if (e.target.closest('#sheet-invite')) { openInviteSheet(); return; }
   if (e.target.closest('#unlink-phone')) {
     if (!(await confirmDialog('Отвязать номер? Друзья больше не найдут тебя по нему.'))) return;
     try {
@@ -926,9 +995,7 @@ document.addEventListener('click', async (e) => {
 async function copyInvite() {
   try {
     const link = await friendLink();
-    await navigator.clipboard.writeText(link);
-    haptic('success');
-    toast('Ссылка скопирована');
+    if (await copyText(link)) { haptic('success'); toast('Ссылка скопирована'); } else toast('Не получилось скопировать');
   } catch { toast('Не получилось скопировать'); }
 }
 document.addEventListener('click', (e) => { if (e.target.closest('#sheet-copy')) copyInvite(); });

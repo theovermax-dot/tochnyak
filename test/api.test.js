@@ -533,3 +533,32 @@ test('поддержка: обращение пересылается разра
     globalThis.fetch = realFetch;
   }
 });
+
+test('приглашение по нику: красивая ссылка, друг добавляется по нику', async () => {
+  const env = makeEnv();
+  const nick = { id: 11, first_name: 'Максим', username: 'kellluss' };
+  await call(env, '/api/me', { user: nick });
+  await call(env, '/api/auth', { user: nick, method: 'POST', body: { accept: true } });
+  await call(env, '/api/auth', { user: vitya, method: 'POST', body: { accept: true } });
+  let r = await call(env, '/api/friends', { user: nick });
+  assert.equal(r.data.link, 'https://t.me/tochnyak_bot?start=kellluss');
+  r = await call(env, '/api/friends', { user: vitya, method: 'POST', body: { code: 'KELLLUSS' } });
+  assert.deepEqual(r.data, { added: true, name: 'Максим' });
+  r = await call(env, '/api/friends', { user: vitya, method: 'POST', body: { code: 'nobody_here' } });
+  assert.equal(r.status, 404);
+  // Без ника — ссылка с кодом.
+  r = await call(env, '/api/friends', { user: vitya });
+  assert.match(r.data.link, /\?start=f_[a-z0-9]{8}$/);
+  // Бот понимает ник в /start.
+  const sent = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (u, init) => { sent.push(JSON.parse(init.body)); return new Response('{"ok":true,"result":{}}'); };
+  try {
+    await worker.fetch(new Request('https://tochnyak.test/bot/webhook', {
+      method: 'POST', headers: { 'x-telegram-bot-api-secret-token': 'test-secret', 'content-type': 'application/json' },
+      body: JSON.stringify({ message: { message_id: 1, chat: { id: 5 }, from: { id: 5 }, text: '/start kellluss' } })
+    }), env);
+  } finally { globalThis.fetch = realFetch; }
+  assert.match(sent[0].caption, /Максим бросает тебе вызов/);
+  assert.match(sent[0].reply_markup.inline_keyboard[0][0].web_app.url, /\?f=[a-z0-9]{8}$/);
+});

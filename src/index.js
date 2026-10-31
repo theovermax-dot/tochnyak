@@ -36,8 +36,31 @@ function botUsername(env) {
 }
 
 // direct: ссылка сразу открывает мини-апп (нужен Main Mini App в BotFather), иначе — чат с ботом.
-function inviteLink(env, code, direct = false) {
-  return `https://t.me/${botUsername(env)}?${direct ? 'startapp' : 'start'}=f_${code}`;
+// ref — ник игрока в Telegram (красиво: ?start=kellluss) или код f_xxxxxxxx, если ника нет.
+function inviteLink(env, ref, direct = false) {
+  return `https://t.me/${botUsername(env)}?${direct ? 'startapp' : 'start'}=${ref}`;
+}
+
+// Что подставлять в ссылку-приглашение: ник, если он есть и не похож на код, иначе код.
+const USERNAME_REF = /^[A-Za-z][A-Za-z0-9_]{3,31}$/;
+function refFor(username, code) {
+  return username && USERNAME_REF.test(username) ? username : `f_${code}`;
+}
+
+// Разбирает то, что пришло из ссылки: f_код, код или ник. Возвращает игрока или null.
+async function resolveRef(db, raw) {
+  const str = String(raw || '');
+  const byCode = (c) => db.prepare('SELECT id, first_name, friend_code FROM users WHERE friend_code = ?1').bind(c).first();
+  const byName = (n) => db.prepare('SELECT id, first_name, friend_code FROM users WHERE username = ?1 COLLATE NOCASE').bind(n).first();
+  // f_xxxxxxxx — точно код.
+  if (str.startsWith('f_')) return FRIEND_CODE.test(str.slice(2)) ? (await byCode(str.slice(2))) || null : null;
+  // Без приставки — сначала ник, потом код (старые ссылки ?f=код).
+  if (USERNAME_REF.test(str)) {
+    const n = await byName(str);
+    if (n) return n;
+  }
+  if (FRIEND_CODE.test(str)) return (await byCode(str)) || null;
+  return null;
 }
 
 // Включён ли у бота Main Mini App. Спрашиваем Telegram раз в 10 минут; MAIN_APP=1/0 в настройках перекрывает.
@@ -163,8 +186,9 @@ async function findPlayer(db, query) {
 }
 
 async function addFriend(db, userId, code, now, { bonus = true } = {}) {
-  if (!FRIEND_CODE.test(String(code || ''))) return { error: [400, 'bad_code', 'Ссылка-приглашение не подходит'] };
-  const friend = await db.prepare('SELECT id, first_name FROM users WHERE friend_code = ?1').bind(code).first();
+  const raw = String(code || '');
+  if (!FRIEND_CODE.test(raw.replace(/^f_/, '')) && !USERNAME_REF.test(raw)) return { error: [400, 'bad_code', 'Ссылка-приглашение не подходит'] };
+  const friend = await resolveRef(db, raw);
   if (!friend) return { error: [404, 'no_friend', 'Игрок по этой ссылке не найден'] };
   if (friend.id === userId) return { self: true };
   const count = await db.prepare('SELECT COUNT(*) AS n FROM friends WHERE user_id = ?1').bind(userId).first();
@@ -446,6 +470,7 @@ async function handleApi(request, env, url, now, ctx) {
   if (path === '/api/friends' && method === 'GET') {
     const period = url.searchParams.get('period') === 'all' ? 'all' : 'week';
     const code = await ensureFriendCode(db, tgUser.id);
+    const ref = refFor(tgUser.username, code);
     const circle = 'u.id = ?1 OR u.id IN (SELECT friend_id FROM friends WHERE user_id = ?1)';
     const { results } = period === 'all'
       ? await db.prepare(`SELECT u.id, u.first_name, u.friend_code, u.photo_url, u.aura AS pts FROM users u
@@ -456,7 +481,8 @@ async function handleApi(request, env, url, now, ctx) {
     return json({
       period,
       code,
-      link: code ? inviteLink(env, code, await hasMainApp(env, now)) : null,
+      link: code ? inviteLink(env, ref, await hasMainApp(env, now)) : null,
+      // Страница с большой картинкой-превью: для соцсетей, которые не показывают превью t.me.
       shareLink: code ? `${url.origin}/i/${code}` : null,
       rows: results.map((r, i) => ({
         rank: i + 1,
@@ -484,7 +510,7 @@ async function handleApi(request, env, url, now, ctx) {
         photo_height: 1672,
         caption: inviteCaption(tgUser.firstName),
         parse_mode: 'HTML',
-        reply_markup: { inline_keyboard: [[{ text: 'Принять вызов', url: inviteLink(env, code, await hasMainApp(env, now)) }]] }
+        reply_markup: { inline_keyboard: [[{ text: 'Принять вызов', url: inviteLink(env, refFor(tgUser.username, code), await hasMainApp(env, now)) }]] }
       },
       allow_user_chats: true,
       allow_group_chats: true,
@@ -606,14 +632,14 @@ async function handleBot(request, env, url) {
   const text = msg.text.trim();
   if (text.startsWith('/start')) {
     const payload = text.split(/\s+/)[1] || '';
-    const ref = /^f_([a-z0-9]{8})$/.exec(payload);
     let inviter = null;
-    if (ref) {
+    let ref = null;
+    if (payload && /^(f_[a-z0-9]{8}|[A-Za-z][A-Za-z0-9_]{3,31})$/.test(payload)) {
       await ensureSchema(env.DB);
-      const row = await env.DB.prepare('SELECT first_name FROM users WHERE friend_code = ?1').bind(ref[1]).first();
-      inviter = row ? (row.first_name || 'Друг') : 'Друг';
+      const row = await resolveRef(env.DB, payload);
+      if (row) { inviter = row.first_name || 'Друг'; ref = [payload, row.friend_code]; }
     }
-    const openUrl = ref ? `${appUrl}/?f=${ref[1]}` : appUrl;
+    const openUrl = ref && ref[1] ? `${appUrl}/?f=${ref[1]}` : appUrl;
     const keyboard = {
       inline_keyboard: [
         [{ text: ref ? '⚔️ Принять вызов' : '⚽ Играть', web_app: { url: openUrl } }],
@@ -690,7 +716,7 @@ async function handleBot(request, env, url) {
 // Страница-ссылка приглашения: в Telegram разворачивается в большую картинку, а при открытии ведёт в бота.
 async function handleInvitePage(env, url) {
   const m = /^\/i\/([a-z0-9]{8})$/.exec(url.pathname);
-  const target = m ? inviteLink(env, m[1], await hasMainApp(env)) : `https://t.me/${botUsername(env)}`;
+  const target = m ? inviteLink(env, `f_${m[1]}`, await hasMainApp(env)) : `https://t.me/${botUsername(env)}`;
   const t = escHtml(target);
   const img = `${url.origin}/invite.jpg`;
   const html = `<!doctype html><html lang="ru"><head><meta charset="utf-8">
