@@ -433,10 +433,23 @@ function matchTag(m) {
   return p ? `<span class="tag tag-wait num">${p.home}:${p.away}</span>` : `<span class="tag tag-none">${icon('i-lock')}</span>`;
 }
 
+// Награда за точный счёт: 10 за счёт + по 1 за «обе забьют» и тотал, которые при точном счёте угаданы всегда.
+// Должно совпадать с src/scoring.js. Редкий исход может дать ещё больше.
+const PRIZE = { aura: 12, coins: 5 };
+
+function prize(m) {
+  if (!m.open) return '<span class="prize" aria-hidden="true"></span>';
+  return `<span class="prize" title="Столько дадут за точный счёт">
+    <span class="prize-l">за точный счёт</span>
+    <span class="prize-v"><span class="prize-a num"><svg class="ic" aria-hidden="true"><use href="#i-target"/></svg>+${PRIZE.aura}</span><span class="prize-c num"><span class="coin" aria-hidden="true"></span>+${PRIZE.coins}</span></span>
+  </span>`;
+}
+
 function matchRow(m) {
   const label = `${m.home.short} — ${m.away.short}, ${league(m)}`;
   return `<button type="button" class="match-row" data-match="${m.id}" aria-label="${esc(label)}">
     <span class="pair">${crest(m.home)}${centerCell(m)}${crest(m.away)}</span>
+    ${prize(m)}
     ${matchTag(m)}
   </button>`;
 }
@@ -504,6 +517,7 @@ function renderSheet() {
     </div>
     <div class="pills">${[outcome, btts, total].map((t) => `<span class="pill">${esc(t)}</span>`).join('')}</div>
     <button type="button" id="save-btn" class="btn btn-primary">${icon('i-lock')}Залочить <span class="num">${s.home}:${s.away}</span></button>
+    <div class="prize-line">Угадаешь точно: <b class="num prize-a"><svg class="ic" aria-hidden="true"><use href="#i-target"/></svg>+${PRIZE.aura} ауры</b> и <b class="num prize-c"><span class="coin" aria-hidden="true"></span>+${PRIZE.coins} монет</b></div>
     <p class="sheet-foot">Приём закроется через <span class="num">${untilText(left)}</span></p>
     <p id="sheet-error" class="error center" role="alert" hidden></p>`;
 }

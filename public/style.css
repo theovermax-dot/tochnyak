@@ -183,7 +183,7 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--crimson-hi); ou
 }
 .match-row:last-child { border-bottom: none; }
 .match-row:active { background: rgba(255, 255, 255, 0.04); }
-.pair { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; }
+.pair { flex: none; min-width: 0; display: flex; align-items: center; gap: 10px; }
 .mid { width: 100px; flex: none; display: flex; flex-direction: column; align-items: center; gap: 2px; }
 .mid-main { font-size: 17px; font-weight: 800; letter-spacing: -0.02em; color: var(--ink); }
 .mid-main.time { color: #fff; }
@@ -492,3 +492,22 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--crimson-hi); ou
 #bn-friend .hint { margin: 0 4px; }
 
 #my-list { display: flex; flex-direction: column; gap: 14px; }
+
+/* Награда за точный счёт в строке матча */
+.prize { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; }
+.prize-l { font-size: 10px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: var(--faint); white-space: nowrap; }
+.prize-v { display: flex; align-items: center; gap: 10px; }
+.prize-a, .prize-c { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; font-weight: 800; white-space: nowrap; }
+.prize-a { color: #ff8fab; }
+.prize-a .ic { width: 13px; height: 13px; stroke-width: 2.4; }
+.prize-c { color: #ffd27a; }
+.prize-c .coin { width: 12px; height: 12px; }
+@media (max-width: 420px) {
+  .prize-l { display: none; }
+  .prize-v { flex-direction: column; align-items: flex-start; gap: 2px; }
+  .match-row { gap: 8px; padding-left: 12px; padding-right: 12px; }
+  .pair { gap: 8px; }
+  .mid { width: 92px; }
+}
+.prize-line { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px; font-size: 13px; font-weight: 700; color: var(--muted); }
+.prize-line b { font-size: 13px; }
