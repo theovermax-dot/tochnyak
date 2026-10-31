@@ -756,66 +756,98 @@ function renderWardrobe() {
 }
 
 // ---------- Персонаж, которого можно крутить пальцем ----------
-// Четыре ракурса по кругу: спереди → справа → сзади → слева. Палец вправо — персонаж поворачивается вправо.
+// 12 ракурсов через каждые 30°. Между соседними ракурсами картинка плавно перетекает,
+// поэтому поворот идёт непрерывно, без рывков. После броска пальцем персонаж докручивается по инерции.
 
-const DUDE_VIEWS = ['front', 'right', 'back', 'left'];
-const DUDE_STEP = 46; // сколько пикселей провести пальцем на один поворот
-const spinState = { frame: 0 };
+const DUDE_FRAMES = 12;
+const DEG_PER_PX = 0.85;
+const spin = { angle: 0, els: new Set(), raf: 0, velocity: 0, dragging: false };
 
 function mountSpinners() {
   document.querySelectorAll('[data-spin]').forEach((el) => {
-    if (el.dataset.ready) { showFrame(el, spinState.frame); return; }
+    spin.els.add(el);
+    if (el.dataset.ready) { paintSpin(); return; }
     el.dataset.ready = '1';
-    el.innerHTML = DUDE_VIEWS.map((v, i) => `<img src="/dude/${v}.webp" alt="" draggable="false" class="${i === spinState.frame ? 'on' : ''}">`).join('')
-      + '<span class="spin-dots" aria-hidden="true">' + DUDE_VIEWS.map(() => '<i></i>').join('') + '</span>'
-      + '<span class="spin-hint" aria-hidden="true">↔ крути</span>';
-    showFrame(el, spinState.frame);
-    let startX = 0; let startFrame = 0; let dragging = false; let moved = false; let lastX = 0; let lastT = 0; let speed = 0;
+    el.innerHTML = '<div class="spin-imgs">'
+      + Array.from({ length: DUDE_FRAMES }, (_, i) => `<img src="/dude/${String(i).padStart(2, '0')}.webp" alt="" draggable="false" decoding="async">`).join('')
+      + '</div><span class="spin-hint" aria-hidden="true">↔ крути</span>';
+    let lastX = 0; let lastT = 0;
+    // iOS: не даём странице и Telegram уехать, пока палец крутит персонажа.
+    el.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
     el.addEventListener('pointerdown', (e) => {
-      dragging = true; moved = false; startX = lastX = e.clientX; lastT = performance.now(); speed = 0; startFrame = spinState.frame;
+      spin.dragging = true; spin.velocity = 0;
+      cancelAnimationFrame(spin.raf);
+      lastX = e.clientX; lastT = performance.now();
       el.setPointerCapture(e.pointerId);
       el.classList.add('grab');
+      const hint = el.querySelector('.spin-hint'); if (hint) hint.remove();
     });
     el.addEventListener('pointermove', (e) => {
-      if (!dragging) return;
-      const dx = e.clientX - startX;
-      if (Math.abs(dx) > 6) moved = true;
+      if (!spin.dragging) return;
+      e.preventDefault();
       const now = performance.now();
-      speed = (e.clientX - lastX) / Math.max(1, now - lastT);
+      const d = (e.clientX - lastX) * DEG_PER_PX;
+      const dt = Math.max(1, now - lastT);
+      spin.velocity = spin.velocity * 0.6 + (d / dt) * 0.4; // градусы в миллисекунду, сглаженно
       lastX = e.clientX; lastT = now;
-      const steps = Math.round(dx / DUDE_STEP);
-      const frac = dx / DUDE_STEP - steps;
-      const frame = ((startFrame + steps) % 4 + 4) % 4;
-      if (frame !== spinState.frame) { spinState.frame = frame; haptic('select'); }
-      showFrame(el, frame, frac);
+      setAngle(spin.angle + d);
     });
     const end = () => {
-      if (!dragging) return;
-      dragging = false;
+      if (!spin.dragging) return;
+      spin.dragging = false;
       el.classList.remove('grab');
-      if (moved) el.closest('.stage, .hero-dude')?.querySelector('.spin-hint')?.remove();
-      // Быстрый взмах докручивает ещё пару ракурсов.
-      let extra = Math.min(3, Math.floor(Math.abs(speed) * 2));
-      const dir = speed > 0 ? 1 : -1;
-      const tick = () => {
-        if (extra-- <= 0) { showFrame(el, spinState.frame); return; }
-        spinState.frame = ((spinState.frame + dir) % 4 + 4) % 4;
-        showFrame(el, spinState.frame, 0);
-        setTimeout(tick, 110);
-      };
-      tick();
+      if (performance.now() - lastT > 80) spin.velocity = 0;
+      coast();
     };
     el.addEventListener('pointerup', end);
     el.addEventListener('pointercancel', end);
   });
+  paintSpin();
 }
 
-function showFrame(el, frame, frac = 0) {
-  el.querySelectorAll('img').forEach((img, i) => {
-    img.classList.toggle('on', i === frame);
-    img.style.transform = i === frame ? `rotateY(${frac * 28}deg) scaleX(${1 - Math.abs(frac) * 0.12})` : '';
-  });
-  el.querySelectorAll('.spin-dots i').forEach((d, i) => d.classList.toggle('on', i === frame));
+function setAngle(a) {
+  const before = Math.floor(spin.angle / 30);
+  spin.angle = a;
+  if (Math.floor(a / 30) !== before) haptic('select');
+  paintSpin();
+}
+
+// Инерция с трением, в конце мягко встаём на ближайший ракурс.
+function coast() {
+  let prev = performance.now();
+  const step = (now) => {
+    const dt = Math.min(40, now - prev); prev = now;
+    if (Math.abs(spin.velocity) > 0.02) {
+      setAngle(spin.angle + spin.velocity * dt);
+      spin.velocity *= Math.pow(0.994, dt);
+      spin.raf = requestAnimationFrame(step);
+      return;
+    }
+    const target = Math.round(spin.angle / 30) * 30;
+    const diff = target - spin.angle;
+    if (Math.abs(diff) < 0.3) { spin.angle = target; paintSpin(); return; }
+    spin.angle += diff * Math.min(1, dt * 0.012);
+    paintSpin();
+    spin.raf = requestAnimationFrame(step);
+  };
+  spin.raf = requestAnimationFrame(step);
+}
+
+function paintSpin() {
+  const pos = ((spin.angle / 30) % DUDE_FRAMES + DUDE_FRAMES) % DUDE_FRAMES;
+  const i = Math.floor(pos);
+  const j = (i + 1) % DUDE_FRAMES;
+  // Переход сжат к середине: двойного силуэта почти не видно, а движение остаётся непрерывным.
+  const raw = pos - i;
+  const t = Math.min(1, Math.max(0, (raw - 0.2) / 0.6));
+  for (const el of spin.els) {
+    if (!el.isConnected) { spin.els.delete(el); continue; }
+    el.querySelectorAll('.spin-imgs img').forEach((img, k) => {
+      if (k === i) { img.style.opacity = '1'; img.style.zIndex = '1'; }
+      else if (k === j) { img.style.opacity = String(t); img.style.zIndex = '2'; }
+      else { img.style.opacity = '0'; img.style.zIndex = '0'; }
+    });
+  }
 }
 
 boot();

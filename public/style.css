@@ -248,7 +248,7 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--crimson-hi); ou
 /* Гардероб */
 .coins { display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 12px; border-radius: 999px; font-size: 14px; font-weight: 800; }
 .coin { width: 14px; height: 14px; border-radius: 50%; background: #ffd27a; box-shadow: inset 0 -2px 0 #c8962e; }
-.stage { border-radius: 28px; height: 340px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; position: relative; overflow: hidden; }
+.stage { background: radial-gradient(70% 60% at 50% 60%, #12070c 0%, #050507 70%); border-radius: 28px; height: 340px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; position: relative; overflow: hidden; }
 .stage .dude { height: 240px; }
 .stage-note { position: absolute; top: 12px; right: 14px; font-size: 12px; font-weight: 700; color: var(--faint); }
 .items { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
@@ -317,22 +317,20 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--crimson-hi); ou
 
 /* Персонаж в профиле */
 .hero-dude { position: relative; width: 100%; height: 330px; display: flex; align-items: flex-end; justify-content: center; border-radius: 20px; overflow: hidden; }
-.dude-glow { position: absolute; left: 50%; bottom: 10px; width: 240px; height: 240px; transform: translateX(-50%); border-radius: 50%;
+.hero-dude { background: radial-gradient(70% 60% at 50% 60%, #12070c 0%, #050507 70%); }
+.dude-glow { display: none; position: absolute; left: 50%; bottom: 10px; width: 240px; height: 240px; transform: translateX(-50%); border-radius: 50%;
   background: radial-gradient(circle, rgba(197, 3, 55, 0.55) 0%, rgba(197, 3, 55, 0.12) 45%, rgba(197, 3, 55, 0) 70%); }
 /* Крутилка персонажа */
-.spin { position: relative; width: 100%; height: 100%; touch-action: pan-y; cursor: grab; perspective: 700px; -webkit-user-select: none; user-select: none; }
+.spin { position: relative; width: 100%; height: 100%; touch-action: none; cursor: grab; -webkit-user-select: none; user-select: none; }
 .spin.grab { cursor: grabbing; }
-.spin img {
-  position: absolute; left: 50%; bottom: 22px; height: calc(100% - 34px); width: auto; transform-origin: 50% 100%;
-  translate: -50% 0; opacity: 0; transition: opacity .12s ease; pointer-events: none;
-  filter: drop-shadow(0 14px 18px rgba(0, 0, 0, 0.55));
+.spin-imgs {
+  position: absolute; left: 50%; bottom: 0; height: 100%; aspect-ratio: 460 / 660; translate: -50% 0;
+  -webkit-mask-image: radial-gradient(ellipse 50% 52% at 50% 50%, #000 62%, transparent 100%);
+  mask-image: radial-gradient(ellipse 50% 52% at 50% 50%, #000 62%, transparent 100%);
 }
-.spin img.on { opacity: 1; }
-.spin:not(.grab) img.on { animation: float 3.2s ease-in-out infinite; }
-@keyframes float { 50% { translate: -50% -5px; } }
-.spin-dots { position: absolute; left: 50%; bottom: 6px; translate: -50% 0; display: flex; gap: 6px; }
-.spin-dots i { width: 6px; height: 6px; border-radius: 50%; background: rgba(255, 255, 255, 0.25); transition: background .15s, width .15s; }
-.spin-dots i.on { width: 16px; border-radius: 3px; background: var(--crimson-hi); }
+.spin:not(.grab) .spin-imgs { animation: float 3.2s ease-in-out infinite; }
+@keyframes float { 50% { translate: -50% -4px; } }
+.spin-imgs img { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; pointer-events: none; }
 .spin-hint { position: absolute; left: 12px; top: 10px; font-size: 12px; font-weight: 800; color: var(--muted); padding: 5px 10px; border-radius: 999px; background: rgba(255, 255, 255, 0.08); }
 .dude-btn { position: absolute; right: 8px; top: 8px; z-index: 2; color: var(--ink); display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 12px; border-radius: 999px;
   background: rgba(255, 255, 255, 0.1); border: 1px solid var(--glass-line); font-size: 13px; font-weight: 800; -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); }
