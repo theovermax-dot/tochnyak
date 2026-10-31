@@ -55,6 +55,8 @@ async function api(path, { method = 'GET', body } = {}) {
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
+    // Регистрацию обновили, пока приложение было открыто: показываем её заново.
+    if (data.error === 'reg_update' && path !== '/api/me') setTimeout(boot, 0);
     const err = new Error(data.message || 'Ошибка сети');
     err.status = res.status;
     err.code = data.error;
@@ -169,6 +171,9 @@ async function boot() {
   try {
     const me = await api('/api/me');
     if (!me.registered) {
+      $('gate-lead').textContent = me.returning
+        ? 'Мы обновили регистрацию. Подтверди правила и привяжи номер, чтобы друзья могли тебя найти. Аура и прогнозы останутся.'
+        : 'Угадай счёт. Копи ауру. Обгоняй друзей.';
       $('login-name').textContent = me.firstName || 'Игрок';
       $('login-avatar').textContent = initials(me.firstName);
       showGate('gate-login');

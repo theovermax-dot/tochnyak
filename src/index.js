@@ -216,6 +216,10 @@ async function loadProfile(db, userId, now) {
   };
 }
 
+// Текущая версия регистрации. Подняли номер — и все, у кого версия меньше, при следующем входе
+// снова видят экран согласия и шаг с номером. Аура, прогнозы и друзья при этом сохраняются.
+export const REG_VERSION = 2;
+
 async function handleApi(request, env, url, now, ctx) {
   const db = env.DB;
   const tgUser = await currentTelegramUser(request, env);
@@ -227,6 +231,8 @@ async function handleApi(request, env, url, now, ctx) {
   if (path === '/api/me' && method === 'GET') {
     const profile = await loadProfile(db, tgUser.id, now);
     if (!profile) return json({ registered: false, firstName: tgUser.firstName });
+    const reg = await db.prepare('SELECT reg_version FROM users WHERE id = ?1').bind(tgUser.id).first();
+    if (reg.reg_version < REG_VERSION) return json({ registered: false, returning: true, firstName: tgUser.firstName });
     await db.prepare('UPDATE users SET last_seen_at = ?1, first_name = ?2, username = ?3, language_code = ?4 WHERE id = ?5')
       .bind(nowIso(now), tgUser.firstName, tgUser.username, tgUser.languageCode, tgUser.id).run();
     return json({ registered: true, profile });
@@ -236,17 +242,22 @@ async function handleApi(request, env, url, now, ctx) {
     const body = await request.json().catch(() => ({}));
     if (body.accept !== true) return error(400, 'consent_required', 'Нужно согласие с правилами и политикой конфиденциальности');
     const at = nowIso(now);
-    await db.prepare(`INSERT INTO users (id, first_name, username, language_code, aura, accepted_terms_at, created_at, last_seen_at)
-      VALUES (?1, ?2, ?3, ?4, 0, ?5, ?5, ?5)
+    await db.prepare(`INSERT INTO users (id, first_name, username, language_code, aura, accepted_terms_at, created_at, last_seen_at, reg_version)
+      VALUES (?1, ?2, ?3, ?4, 0, ?5, ?5, ?5, ?6)
       ON CONFLICT(id) DO UPDATE SET first_name = excluded.first_name, username = excluded.username,
-        language_code = excluded.language_code, last_seen_at = excluded.last_seen_at`)
-      .bind(tgUser.id, tgUser.firstName, tgUser.username, tgUser.languageCode, at).run();
+        language_code = excluded.language_code, last_seen_at = excluded.last_seen_at,
+        accepted_terms_at = excluded.accepted_terms_at, reg_version = excluded.reg_version`)
+      .bind(tgUser.id, tgUser.firstName, tgUser.username, tgUser.languageCode, at, REG_VERSION).run();
     return json({ registered: true, profile: await loadProfile(db, tgUser.id, now) });
   }
 
   // Дальше только для зарегистрированных.
-  const exists = await db.prepare('SELECT 1 AS ok FROM users WHERE id = ?1').bind(tgUser.id).first();
+  const exists = await db.prepare('SELECT reg_version FROM users WHERE id = ?1').bind(tgUser.id).first();
   if (!exists) return error(403, 'not_registered', 'Сначала войдите в приложение');
+  // Удалить аккаунт можно и без повторной регистрации.
+  if (exists.reg_version < REG_VERSION && !(path === '/api/me' && method === 'DELETE')) {
+    return error(403, 'reg_update', 'Пройди регистрацию заново');
+  }
 
   if (path === '/api/me' && method === 'DELETE') {
     await deleteUserBattles(db, tgUser.id);

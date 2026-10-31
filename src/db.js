@@ -96,7 +96,9 @@ const COLUMNS = [
   'ALTER TABLE users ADD COLUMN friend_code TEXT',
   'ALTER TABLE users ADD COLUMN coins INTEGER NOT NULL DEFAULT 0',
   "ALTER TABLE users ADD COLUMN character TEXT NOT NULL DEFAULT 'tochnyak'",
-  'ALTER TABLE users ADD COLUMN phone TEXT'
+  'ALTER TABLE users ADD COLUMN phone TEXT',
+  // Версия регистрации, которую игрок прошёл. Старые аккаунты получают 1 и проходят регистрацию заново.
+  'ALTER TABLE users ADD COLUMN reg_version INTEGER NOT NULL DEFAULT 1'
 ];
 
 async function migrate(db) {

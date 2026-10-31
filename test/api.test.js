@@ -392,3 +392,19 @@ test('номер через бота, поиск друга по username и н�
     globalThis.fetch = realFetch;
   }
 });
+
+test('старый аккаунт проходит регистрацию заново и сохраняет ауру', async () => {
+  const env = makeEnv();
+  await call(env, '/api/me', { user: max });
+  await call(env, '/api/auth', { user: max, method: 'POST', body: { accept: true } });
+  await env.DB.prepare('UPDATE users SET reg_version = 1, aura = 42 WHERE id = 1').run();
+  let r = await call(env, '/api/me', { user: max });
+  assert.equal(r.data.registered, false);
+  assert.equal(r.data.returning, true);
+  r = await call(env, '/api/matches', { user: max });
+  assert.equal(r.data.error, 'reg_update');
+  r = await call(env, '/api/auth', { user: max, method: 'POST', body: { accept: true } });
+  assert.equal(r.data.profile.aura, 42, 'аура на месте');
+  r = await call(env, '/api/matches', { user: max });
+  assert.equal(r.status, 200);
+});
