@@ -93,8 +93,15 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--crimson-hi); ou
 .avatar-sm { width: 30px; height: 30px; font-size: 12px; }
 
 /* Каркас */
-#app { padding: calc(10px + var(--safe-top)) 16px calc(100px + var(--safe-bottom)); max-width: 520px; margin: 0 auto; }
-.topbar { display: flex; align-items: center; justify-content: space-between; min-height: 48px; margin-bottom: 10px; }
+#app { padding: 0 16px calc(100px + var(--safe-bottom)); max-width: 520px; margin: 0 auto; }
+/* Шапка закреплена и всегда ниже кнопок Telegram; список уходит под неё и мягко растворяется. */
+.topbar {
+  position: sticky; top: 0; z-index: 9; display: flex; align-items: center; justify-content: space-between;
+  min-height: 48px; margin: 0 -16px 8px; padding: calc(8px + var(--safe-top)) 16px 10px;
+  background: linear-gradient(180deg, rgba(10, 4, 10, 0.97) 0%, rgba(10, 4, 10, 0.9) 75%, rgba(10, 4, 10, 0) 100%);
+  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+  -webkit-mask-image: linear-gradient(180deg, #000 82%, transparent); mask-image: linear-gradient(180deg, #000 82%, transparent);
+}
 .brand { display: flex; align-items: center; gap: 8px; }
 .wordmark-sm { font-family: 'Unbounded', sans-serif; font-weight: 800; font-size: 17px; letter-spacing: -0.02em; }
 .aura-pill { display: flex; align-items: center; gap: 6px; height: 40px; padding: 4px 4px 4px 14px; border-radius: 999px; }
@@ -493,24 +500,6 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--crimson-hi); ou
 
 #my-list { display: flex; flex-direction: column; gap: 14px; }
 
-/* Награда за точный счёт в строке матча */
-.prize { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; }
-.prize-l { font-size: 10px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: var(--faint); white-space: nowrap; }
-.prize-v { display: flex; align-items: center; gap: 10px; }
-.prize-a, .prize-c { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; font-weight: 800; white-space: nowrap; }
-.prize-a { color: #ff8fab; }
-.prize-a .ic { width: 13px; height: 13px; stroke-width: 2.4; }
-.prize-c { color: #ffd27a; }
-.prize-c .coin { width: 12px; height: 12px; }
-@media (max-width: 420px) {
-  .prize-l { display: none; }
-  .prize-v { flex-direction: column; align-items: flex-start; gap: 2px; }
-  .match-row { gap: 8px; padding-left: 12px; padding-right: 12px; }
-  .pair { gap: 8px; }
-  .mid { width: 92px; }
-}
-.prize-line { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px; font-size: 13px; font-weight: 700; color: var(--muted); }
-.prize-line b { font-size: 13px; }
 
 /* Номер и поиск друзей */
 input { -webkit-user-select: text; user-select: text; }
@@ -537,3 +526,52 @@ input { -webkit-user-select: text; user-select: text; }
 .me-ok { display: inline-flex; align-items: center; gap: 4px; color: var(--green); font-weight: 800; }
 .me-ok .ic { width: 16px; height: 16px; stroke-width: 2.6; }
 .link-sm { font-size: 12px; font-weight: 700; margin-left: 6px; color: var(--faint); }
+
+/* Строка матча: время слева, команды в две строки, действие справа */
+.mr { gap: 12px; padding: 12px 14px; min-height: 76px; }
+.mr-time { width: 66px; flex: none; display: flex; flex-direction: column; gap: 3px; }
+.mr-time b { font-size: 15px; font-weight: 800; color: var(--ink); white-space: nowrap; }
+.mr-time b.live-sub { font-family: 'Manrope', sans-serif; font-size: 12px; letter-spacing: .04em; }
+.mr-time span { font-size: 11px; font-weight: 700; color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mr-teams { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; padding-left: 14px; border-left: 1px solid var(--row-line); }
+.mr-team { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.mr-team .crest { width: 24px; height: 24px; box-shadow: none; border-color: rgba(255,255,255,.14); }
+.mr-team .crest::after { display: none; }
+.mr-team .crest img { inset: 3px; width: calc(100% - 6px); height: calc(100% - 6px); filter: none; }
+.mr-team .crest-tla { font-size: 7px; }
+.mr-name { flex: 1; min-width: 0; font-size: 14px; font-weight: 700; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mr-score { font-size: 15px; font-weight: 800; color: var(--ink); }
+.mr-side { flex: none; display: flex; align-items: center; justify-content: flex-end; min-width: 64px; }
+.mr-cta { display: flex; flex-direction: column; align-items: flex-end; gap: 5px; }
+.mr-prize { display: inline-flex; gap: 8px; }
+.prize-a, .prize-c { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; font-weight: 700; white-space: nowrap; }
+.prize-a { color: #ff8fab; }
+.prize-a .ic { width: 11px; height: 11px; stroke-width: 2.4; }
+.prize-c { color: #ffd27a; }
+.prize-c .coin { width: 10px; height: 10px; }
+.hero-prize { margin: -4px 0 0; display: flex; justify-content: center; align-items: center; gap: 8px; font-size: 12px; font-weight: 700; color: var(--faint); }
+.hero-prize .prize-a, .hero-prize .prize-c { font-size: 12px; }
+
+/* Друзья */
+.invite-row .btn { flex: 1; }
+.invite-row .btn-glass { flex: 0 0 auto; padding: 0 18px; }
+.sec-head { align-items: center; }
+.mini-seg { display: inline-flex; gap: 2px; padding: 3px; border-radius: 12px; background: rgba(255, 255, 255, 0.05); border: 1px solid var(--glass-line); font-family: 'Manrope', sans-serif; }
+.mini-seg button { height: 28px; padding: 0 10px; border: none; border-radius: 9px; background: none; color: var(--muted); font-size: 12px; font-weight: 700; }
+.mini-seg button[aria-selected="true"] { background: var(--ink); color: var(--ground); }
+.lb-row { gap: 12px; padding: 10px 14px 10px 16px; min-height: 58px; }
+.lb-row.me { background: rgba(197, 3, 55, 0.14); box-shadow: inset 3px 0 0 var(--crimson-hi); }
+.lb-tap { cursor: pointer; }
+.lb-tap:active { background: rgba(255, 255, 255, 0.04); }
+.lb-rank { width: 18px; text-align: center; }
+.lb-pts { display: inline-flex; align-items: center; gap: 4px; }
+.lb-pts .ic { width: 13px; height: 13px; color: var(--crimson-hi); stroke-width: 2.4; }
+.fight-ic { width: 36px; height: 36px; flex: none; border-radius: 12px; border: 1px solid rgba(255, 46, 99, 0.35); background: rgba(197, 3, 55, 0.16); color: #ffb3c6; display: inline-flex; align-items: center; justify-content: center; padding: 0; }
+.fight-ic .ic { width: 17px; height: 17px; }
+.fight-ic:active { transform: scale(0.94); }
+.fight-ghost { visibility: hidden; }
+.friend-card { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 4px 0 6px; }
+.friend-card b { font-size: 18px; }
+.avatar-lg { width: 64px; height: 64px; font-size: 22px; }
+.btn-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.battle-promo { padding: 12px 14px; }

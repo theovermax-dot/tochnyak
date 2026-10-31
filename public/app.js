@@ -354,8 +354,10 @@ document.addEventListener('click', (e) => {
   if (pick) { state.shopPick = pick.dataset.pick; haptic('select'); renderShop(); return; }
   const shopAct = t.closest('[data-shop]');
   if (shopAct) { shopAction(shopAct.dataset.shop, shopAct.dataset.id); return; }
-  const friend = t.closest('[data-friend]');
-  if (friend) { removeFriend(friend.dataset.friend, friend.dataset.name); return; }
+  const unfriend = t.closest('[data-unfriend]');
+  if (unfriend) { removeFriend(unfriend.dataset.unfriend, unfriend.dataset.name); return; }
+  const fopen = t.closest('[data-friend-open]');
+  if (fopen) { openFriend(fopen.dataset.friendOpen); return; }
   const row = t.closest('[data-match]');
   if (row) {
     const id = Number(row.dataset.match);
@@ -457,15 +459,23 @@ function renderMatches() {
     </section>`).join('');
 }
 
-function centerCell(m) {
-  if (LIVE.includes(m.status)) {
-    const sc = m.score ? `${m.score.home}:${m.score.away}` : 'LIVE';
-    return `<span class="mid"><span class="mid-main num live">${sc}</span><span class="mid-sub live-sub"><i class="dot"></i>идёт</span></span>`;
-  }
-  if (m.status === 'FINISHED' && m.score) {
-    return `<span class="mid"><span class="mid-main num">${m.score.home}:${m.score.away}</span><span class="mid-sub">матч окончен</span></span>`;
-  }
-  return `<span class="mid"><span class="mid-main num time">${timeFmt.format(new Date(m.utcDate))}</span><span class="mid-sub">${esc(league(m))}</span></span>`;
+// Короткие названия лиг для узкой колонки времени.
+const LEAGUE_SHORT = { CL: 'ЛЧ', PL: 'АПЛ', PD: 'Ла Лига', SA: 'Серия А', BL1: 'Бундеслига', FL1: 'Лига 1', DED: 'Эредивизи' };
+
+// Награда за точный счёт: 10 за счёт + по 1 за «обе забьют» и тотал, которые при точном счёте угаданы всегда.
+// Должно совпадать с src/scoring.js. Редкий исход может дать ещё больше.
+const PRIZE = { aura: 12, coins: 5 };
+const prizeInline = () => `<span class="prize-a num">+${PRIZE.aura}${icon('i-target')}</span><span class="prize-c num">+${PRIZE.coins}<span class="coin" aria-hidden="true"></span></span>`;
+
+function timeCell(m) {
+  if (LIVE.includes(m.status)) return `<span class="mr-time"><b class="live-sub"><i class="dot"></i>LIVE</b><span>${esc(LEAGUE_SHORT[m.competition] || league(m))}</span></span>`;
+  if (m.status === 'POSTPONED') return '<span class="mr-time"><b class="muted">—</b><span>перенос</span></span>';
+  return `<span class="mr-time"><b class="num">${timeFmt.format(new Date(m.utcDate))}</b><span>${esc(LEAGUE_SHORT[m.competition] || league(m))}</span></span>`;
+}
+
+function teamLine(m, side) {
+  const score = m.score && (LIVE.includes(m.status) || m.status === 'FINISHED') ? `<b class="mr-score num${LIVE.includes(m.status) ? ' live' : ''}">${m.score[side]}</b>` : '';
+  return `<span class="mr-team">${crest(m[side])}<span class="mr-name">${esc(m[side].short)}</span>${score}</span>`;
 }
 
 function matchTag(m) {
@@ -475,29 +485,20 @@ function matchTag(m) {
     if (p.points == null) return `<span class="tag tag-wait num">${p.home}:${p.away}</span>`;
     return `<span class="tag ${p.points > 0 ? 'tag-hit' : 'tag-miss'}"><span class="num">${p.home}:${p.away}</span><b>+${p.points}</b></span>`;
   }
-  if (m.open) return p ? `<span class="tag tag-pred num">${p.home}:${p.away}</span>` : '<span class="tag tag-open">Прогноз</span>';
-  if (m.status === 'POSTPONED') return '<span class="tag tag-none">перенос</span>';
+  if (m.open) {
+    if (p) return `<span class="tag tag-pred num">${p.home}:${p.away}</span>`;
+    return `<span class="mr-cta"><span class="tag tag-open">Прогноз</span><span class="mr-prize">${prizeInline()}</span></span>`;
+  }
+  if (m.status === 'POSTPONED') return '<span class="tag tag-none">—</span>';
   return p ? `<span class="tag tag-wait num">${p.home}:${p.away}</span>` : `<span class="tag tag-none">${icon('i-lock')}</span>`;
-}
-
-// Награда за точный счёт: 10 за счёт + по 1 за «обе забьют» и тотал, которые при точном счёте угаданы всегда.
-// Должно совпадать с src/scoring.js. Редкий исход может дать ещё больше.
-const PRIZE = { aura: 12, coins: 5 };
-
-function prize(m) {
-  if (!m.open) return '<span class="prize" aria-hidden="true"></span>';
-  return `<span class="prize" title="Столько дадут за точный счёт">
-    <span class="prize-l">за точный счёт</span>
-    <span class="prize-v"><span class="prize-a num"><svg class="ic" aria-hidden="true"><use href="#i-target"/></svg>+${PRIZE.aura}</span><span class="prize-c num"><span class="coin" aria-hidden="true"></span>+${PRIZE.coins}</span></span>
-  </span>`;
 }
 
 function matchRow(m) {
   const label = `${m.home.short} — ${m.away.short}, ${league(m)}`;
-  return `<button type="button" class="match-row" data-match="${m.id}" aria-label="${esc(label)}">
-    <span class="pair">${crest(m.home)}${centerCell(m)}${crest(m.away)}</span>
-    ${prize(m)}
-    ${matchTag(m)}
+  return `<button type="button" class="match-row mr" data-match="${m.id}" aria-label="${esc(label)}">
+    ${timeCell(m)}
+    <span class="mr-teams">${teamLine(m, 'home')}${teamLine(m, 'away')}</span>
+    <span class="mr-side">${matchTag(m)}</span>
   </button>`;
 }
 
@@ -515,6 +516,7 @@ function renderHero(list) {
         <span class="team">${crest(next.away, 'crest-lg')}<span>${esc(next.away.short)}</span></span>
       </div>
       <button type="button" class="btn btn-primary" data-match="${next.id}">${p ? `Мой прогноз <span class="num">${p.home}:${p.away}</span>` : 'Вангануть счёт'}</button>
+      <p class="hero-prize">За точный счёт ${prizeInline()}</p>
     </div>`;
 }
 
@@ -564,7 +566,7 @@ function renderSheet() {
     </div>
     <div class="pills">${[outcome, btts, total].map((t) => `<span class="pill">${esc(t)}</span>`).join('')}</div>
     <button type="button" id="save-btn" class="btn btn-primary">${icon('i-lock')}Залочить <span class="num">${s.home}:${s.away}</span></button>
-    <div class="prize-line">Угадаешь точно: <b class="num prize-a"><svg class="ic" aria-hidden="true"><use href="#i-target"/></svg>+${PRIZE.aura} ауры</b> и <b class="num prize-c"><span class="coin" aria-hidden="true"></span>+${PRIZE.coins} монет</b></div>
+    <p class="hero-prize">За точный счёт ${prizeInline()}</p>
     <p class="sheet-foot">Приём закроется через <span class="num">${untilText(left)}</span></p>
     <p id="sheet-error" class="error center" role="alert" hidden></p>`;
 }
@@ -706,15 +708,16 @@ async function loadFriends() {
         <button type="button" class="btn btn-primary btn-inline" data-add-friend>${icon('i-user-plus')}Добавить друга</button></div>`;
       return;
     }
-    $('friends-list').innerHTML = `<div class="glass list-card">${data.rows.map((r) => `
-      <div class="lb-row${r.isMe ? ' me' : ''}">
-        <span class="lb-rank num">${r.rank}</span>
+    state.friendRows = data.rows;
+    $('friends-list').innerHTML = `<div class="glass list-card">${data.rows.map((r) => {
+      const inner = `<span class="lb-rank num">${r.rank}</span>
         <span class="avatar avatar-sm" aria-hidden="true">${esc(initials(r.name))}</span>
         <span class="lb-name">${r.isMe ? 'Ты' : esc(r.name)}</span>
-        <span class="lb-pts num">${r.pts}</span>
-        ${r.isMe ? '<span class="fight-btn fight-btn-ghost" aria-hidden="true"></span>' : `<button type="button" class="fight-btn" data-challenge="${esc(r.code)}" data-name="${esc(r.name)}" aria-label="Бой с ${esc(r.name)}">${icon('i-swords')}Бой</button>`}
-        ${r.isMe ? '<span class="lb-act"></span>' : `<button type="button" class="icon-btn icon-btn-flat lb-act" data-friend="${esc(r.code)}" data-name="${esc(r.name)}" aria-label="Убрать ${esc(r.name)} из друзей">${icon('i-x')}</button>`}
-      </div>`).join('')}</div>`;
+        <span class="lb-pts num">${r.pts}${icon('i-target')}</span>`;
+      if (r.isMe) return `<div class="lb-row me">${inner}<span class="fight-ic fight-ghost" aria-hidden="true"></span></div>`;
+      return `<div class="lb-row lb-tap" data-friend-open="${esc(r.code)}" role="button" tabindex="0" aria-label="${esc(r.name)}">${inner}
+        <button type="button" class="fight-ic" data-challenge="${esc(r.code)}" data-name="${esc(r.name)}" aria-label="Бой с ${esc(r.name)}">${icon('i-swords')}</button></div>`;
+    }).join('')}</div>`;
   } catch (err) {
     $('friends-list').innerHTML = `<div class="glass empty"><b>Не загрузилось</b>${esc(err.message)}</div>`;
   }
@@ -751,9 +754,15 @@ async function shareInvite() {
   if (rich) {
     try {
       const prepared = await api('/api/invite', { method: 'POST' });
-      shareFallback = () => { shareLink().catch((err) => toast(err.message)); };
+      // В полноэкранном режиме iPhone окно отправки Telegram заезжает под часы, и крестик трудно нажать.
+      // На время отправки выходим из полного экрана и потом возвращаемся.
+      const wasFull = Boolean(tg.isFullscreen && tg.exitFullscreen);
+      const restore = () => { if (wasFull) { try { tg.requestFullscreen(); } catch { /* не страшно */ } } };
+      if (wasFull) { try { tg.exitFullscreen(); } catch { /* не страшно */ } await new Promise((r) => setTimeout(r, 350)); }
+      shareFallback = () => { restore(); shareLink().catch((err) => toast(err.message)); };
       tg.shareMessage(prepared.id, (sent) => {
         shareFallback = null;
+        restore();
         if (sent) { haptic('success'); toast('Вызов отправлен'); }
       });
       return;
@@ -786,7 +795,10 @@ function openAddFriend() {
         : canRequestContact() ? '<button type="button" class="link" id="link-phone">Привязать</button>' : '<span class="muted">не привязан</span>'}</div>
     </div>
     <p class="sheet-foot">Друга ещё нет в Точняке? Отправь ему приглашение.</p>
-    <button type="button" class="btn btn-glass" id="sheet-invite">${icon('i-share')}Позвать по ссылке</button>`, { addFriend: true });
+    <div class="btn-pair">
+      <button type="button" class="btn btn-glass" id="sheet-invite">${icon('i-share')}Позвать</button>
+      <button type="button" class="btn btn-glass" id="sheet-copy">${icon('i-copy')}Ссылка</button>
+    </div>`, { addFriend: true });
   setTimeout(() => { try { $('find-q').focus(); } catch { /* не страшно */ } }, 250);
 }
 
@@ -836,7 +848,17 @@ document.addEventListener('click', async (e) => {
   }
 });
 
-$('copy-btn').addEventListener('click', async () => {
+async function copyInvite() {
+  try {
+    const link = await friendLink();
+    await navigator.clipboard.writeText(link);
+    haptic('success');
+    toast('Ссылка скопирована');
+  } catch { toast('Не получилось скопировать'); }
+}
+document.addEventListener('click', (e) => { if (e.target.closest('#sheet-copy')) copyInvite(); });
+
+$('copy-btn') && $('copy-btn').addEventListener('click', async () => {
   try {
     const link = await friendLink();
     await navigator.clipboard.writeText(link);
@@ -844,6 +866,20 @@ $('copy-btn').addEventListener('click', async () => {
     toast('Ссылка скопирована');
   } catch { toast('Не получилось скопировать'); }
 });
+
+// Карточка друга: бой или убрать из друзей.
+function openFriend(code) {
+  const r = (state.friendRows || []).find((x) => x.code === code);
+  if (!r) return;
+  openPanel('<span class="league-tag">Друг</span>', `
+    <div class="friend-card">
+      <span class="avatar avatar-lg" aria-hidden="true">${esc(initials(r.name))}</span>
+      <b>${esc(r.name)}</b>
+      <span class="muted small">${r.rank} место · <span class="num">${r.pts}</span> ауры ${state.fperiod === 'week' ? 'за неделю' : 'всего'}</span>
+    </div>
+    <button type="button" class="btn btn-primary" data-challenge="${esc(r.code)}" data-name="${esc(r.name)}">${icon('i-swords')}Вызвать на бой</button>
+    <button type="button" class="btn btn-ghost" data-unfriend="${esc(r.code)}" data-name="${esc(r.name)}">Убрать из друзей</button>`, { friend: code });
+}
 
 async function removeFriend(code, name) {
   const ok = await confirmDialog(`Убрать ${name} из друзей?`);

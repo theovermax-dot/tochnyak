@@ -135,16 +135,19 @@
   <section id="view-friends" class="view" aria-label="Друзья" hidden>
     <h2 class="title">Друзья</h2>
     <div class="invite-row">
-      <button type="button" class="btn btn-primary" id="invite-btn"><svg class="ic" aria-hidden="true"><use href="#i-share"/></svg>Позвать</button>
+      <button type="button" class="btn btn-primary" id="invite-btn"><svg class="ic" aria-hidden="true"><use href="#i-share"/></svg>Позвать друга</button>
       <button type="button" class="btn btn-glass" id="add-friend-btn"><svg class="ic" aria-hidden="true"><use href="#i-user-plus"/></svg>Добавить</button>
-      <button type="button" class="btn btn-glass btn-square" id="copy-btn" aria-label="Скопировать ссылку"><svg class="ic" aria-hidden="true"><use href="#i-copy"/></svg></button>
-    </div>
-    <div class="glass segmented" role="tablist">
-      <button type="button" role="tab" data-fperiod="week" aria-selected="true">Неделя</button>
-      <button type="button" role="tab" data-fperiod="all" aria-selected="false">Всё время</button>
     </div>
     <div id="battles-list"></div>
+    <section class="day">
+      <div class="day-head sec-head"><span>Таблица</span>
+        <span class="mini-seg" role="tablist">
+          <button type="button" role="tab" data-fperiod="week" aria-selected="true">Неделя</button>
+          <button type="button" role="tab" data-fperiod="all" aria-selected="false">Всё время</button>
+        </span>
+      </div>
     <div id="friends-list"></div>
+    </section>
   </section>
 
   <section id="view-rating" class="view" aria-label="Рейтинг" hidden>
