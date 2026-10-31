@@ -86,7 +86,7 @@ const escHtml = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<':
 export function inviteCaption(name) {
   const who = escHtml(String(name || '').trim().slice(0, 32) || 'Друг');
   return [
-    `<b>${who} бросает тебе вызов в Точняке 🎯</b>`,
+    `<b>${who} приглашает тебя в Точняк 🎯</b>`,
     '',
     'Го угадывать матчи: АПЛ, Ла Лига, Лига чемпионов и ещё четыре лиги.',
     '',
@@ -99,7 +99,7 @@ export function inviteCaption(name) {
 // Приветствие бота на /start. inviter — имя пригласившего, если человек пришёл по ссылке друга.
 export function welcomeCaption(inviter) {
   const head = inviter
-    ? `<b>${escHtml(String(inviter).slice(0, 32))} бросает тебе вызов в Точняке</b>`
+    ? `<b>${escHtml(String(inviter).slice(0, 32))} приглашает тебя в Точняк</b>`
     : '<b>Точняк — угадай, чем закончится матч</b>';
   return [
     head,
@@ -393,9 +393,9 @@ async function handleApi(request, env, url, now, ctx) {
     const mode = body.mode === 'score' ? 'score' : 'outcome';
     const res = await createBattle(db, { userId: tgUser.id, friendCode: body.friend, picks: body.picks, mode, now, lockMs: lockMs(env) });
     if (res.error) return error(...res.error);
-    await addNotice(db, res.opponentId, 'battle_invite', `${tgUser.firstName || 'Друг'} вызывает тебя на бой · ${body.picks.length} ${body.picks.length === 1 ? 'матч' : body.picks.length < 5 ? 'матча' : 'матчей'}`, `#battle-${res.id}`, now);
+    await addNotice(db, res.opponentId, 'battle_invite', `${tgUser.firstName || 'Друг'} бросает тебе вызов на бой · ${body.picks.length} ${body.picks.length === 1 ? 'матч' : body.picks.length < 5 ? 'матча' : 'матчей'}`, `#battle-${res.id}`, now);
     later(ctx, () => notify(env, res.opponentId,
-      `⚔️ <b>${escHtml(tgUser.firstName || 'Друг')} вызывает тебя на бой</b>\n\nМатчей в бою: ${body.picks.length}, ${mode === 'outcome' ? 'ставим на победу' : 'ставим точный счёт'}. Делай прогнозы, пока матчи не начались. Победит тот, кто окажется точнее.`,
+      `⚔️ <b>${escHtml(tgUser.firstName || 'Друг')} бросает тебе вызов на бой</b>\n\nМатчей в бою: ${body.picks.length}, ${mode === 'outcome' ? 'ставим на победу' : 'ставим точный счёт'}. Делай прогнозы, пока матчи не начались. Победит тот, кто окажется точнее.`,
       'Принять бой', `${url.origin}/#battle-${res.id}`));
     return json({ id: res.id });
   }
@@ -511,7 +511,7 @@ async function handleApi(request, env, url, now, ctx) {
         photo_height: 1672,
         caption: inviteCaption(tgUser.firstName),
         parse_mode: 'HTML',
-        reply_markup: { inline_keyboard: [[{ text: 'Принять вызов', url: inviteLink(env, refFor(tgUser.username, code), await hasMainApp(env, now)) }]] }
+        reply_markup: { inline_keyboard: [[{ text: 'Присоединиться', url: inviteLink(env, refFor(tgUser.username, code), await hasMainApp(env, now)) }]] }
       },
       allow_user_chats: true,
       allow_group_chats: true,
@@ -643,7 +643,7 @@ async function handleBot(request, env, url) {
     const openUrl = ref && ref[1] ? `${appUrl}/?f=${ref[1]}` : appUrl;
     const keyboard = {
       inline_keyboard: [
-        [{ text: ref ? '⚔️ Принять вызов' : '⚽ Играть', web_app: { url: openUrl } }],
+        [{ text: ref ? '⚽ Присоединиться' : '⚽ Играть', web_app: { url: openUrl } }],
         [{ text: 'Правила и конфиденциальность', web_app: { url: `${appUrl}/#legal` } }]
       ]
     };
@@ -722,10 +722,10 @@ async function handleInvitePage(env, url) {
   const img = `${url.origin}/invite.jpg`;
   const html = `<!doctype html><html lang="ru"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Точняк: вызов от друга</title>
+<title>Точняк: приглашение от друга</title>
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Точняк">
-<meta property="og:title" content="Тебе бросили вызов в Точняке 🎯">
+<meta property="og:title" content="Тебя позвали в Точняк 🎯">
 <meta property="og:description" content="Угадывай победителей и точный счёт матчей топ-лиг, обгоняй друзей. Бесплатно и без ставок.">
 <meta property="og:image" content="${img}">
 <meta property="og:image:width" content="941">

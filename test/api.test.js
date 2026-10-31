@@ -187,7 +187,7 @@ test('мои прогнозы и эмблемы клубов', async () => {
 });
 
 test('приглашение: подпись, готовое сообщение и страница с превью', async () => {
-  assert.match(inviteCaption('<Макс>'), /&lt;Макс&gt; бросает тебе вызов/);
+  assert.match(inviteCaption('<Макс>'), /&lt;Макс&gt; приглашает тебя в Точняк/);
   const env = makeEnv();
   const r0 = await call(env, '/api/auth', { user: max, method: 'POST', body: { accept: true } });
   const code = r0.data.profile.friendCode;
@@ -465,7 +465,7 @@ test('уведомления: вызов на бой, принятие, проч
   r = await call(env, '/api/notifications', { user: vitya });
   assert.equal(r.data.items[0].kind, 'battle_invite');
   assert.equal(r.data.items[0].link, `#battle-${id}`);
-  assert.match(r.data.items[0].text, /Макс вызывает тебя на бой · 1 матч/);
+  assert.match(r.data.items[0].text, /Макс бросает тебе вызов на бой · 1 матч/);
   await call(env, '/api/notifications/read', { user: vitya, method: 'POST' });
   r = await call(env, '/api/me', { user: vitya });
   assert.equal(r.data.profile.unread, 0);
@@ -559,6 +559,6 @@ test('приглашение по нику: красивая ссылка, др�
       body: JSON.stringify({ message: { message_id: 1, chat: { id: 5 }, from: { id: 5 }, text: '/start kellluss' } })
     }), env);
   } finally { globalThis.fetch = realFetch; }
-  assert.match(sent[0].caption, /Максим бросает тебе вызов/);
+  assert.match(sent[0].caption, /Максим приглашает тебя в Точняк/);
   assert.match(sent[0].reply_markup.inline_keyboard[0][0].web_app.url, /\?f=[a-z0-9]{8}$/);
 });

@@ -868,7 +868,7 @@ async function friendLink() {
   return state.friendLink;
 }
 
-const INVITE_TEXT = 'Бросаю тебе вызов в Точняке 🎯 Угадываем победителей и счёт футбольных матчей, в конце недели смотрим, кто точнее. Заходи:';
+const INVITE_TEXT = 'Приглашаю тебя в Точняк 🎯 Угадываем победителей и счёт футбольных матчей, в конце недели смотрим, кто точнее. Залетай:';
 
 // Приглашение с картинкой и кнопкой. На телефоне — готовое сообщение через Telegram,
 // на компьютере и если что-то пошло не так — обычное окно «Поделиться» со ссылкой.
@@ -900,7 +900,7 @@ async function shareInvite() {
       tg.shareMessage(prepared.id, (sent) => {
         shareFallback = null;
         restore();
-        if (sent) { haptic('success'); toast('Вызов отправлен'); }
+        if (sent) { haptic('success'); toast('Приглашение отправлено'); }
       });
       return;
     } catch { shareFallback = null; /* ниже обычная ссылка */ }
@@ -949,7 +949,7 @@ async function makeStoryImage(link) {
   ctx.fillStyle = '#F5F2F4'; ctx.beginPath(); ctx.arc(W / 2, 200, 9, 0, Math.PI * 2); ctx.fill();
   ctx.textAlign = 'center'; ctx.fillStyle = '#F5F2F4';
   ctx.font = `800 64px ${disp}`; ctx.fillText('ТОЧНЯК', W / 2, 320);
-  ctx.font = `800 88px ${disp}`; ctx.fillText('Бросаю тебе', W / 2, 500); ctx.fillText('вызов', W / 2, 610);
+  ctx.font = `800 88px ${disp}`; ctx.fillText('Приглашаю', W / 2, 500); ctx.fillText('тебя в Точняк', W / 2, 610);
   ctx.fillStyle = 'rgba(245,242,244,0.72)'; ctx.font = `700 42px ${body}`;
   ctx.fillText('Угадай победителя и счёт матчей.', W / 2, 700); ctx.fillText('Посмотрим, кто из нас точнее', W / 2, 756);
   // Персонаж
@@ -1480,7 +1480,7 @@ function showIncomingBattle() {
         <span class="invite-pop-ic">${icon('i-swords')}</span>
         ${ava(state.profile && state.profile.firstName, state.profile && state.profile.photo, 'avatar-lg')}
       </span>
-      <b>${esc(b.opponent.name)} вызывает тебя на бой</b>
+      <b>${esc(b.opponent.name)} бросает тебе вызов на бой</b>
       <span class="muted">${b.total} ${plural(b.total, ['матч', 'матча', 'матчей'])}, ${b.mode === 'outcome' ? 'на победу. Выбери, кто победит' : 'на точный счёт. Поставь свои счета'}, пока матчи не начались. Кто точнее, тот и выиграл бой.</span>
     </div>
     <button type="button" class="btn btn-primary" data-battle="${esc(b.id)}">${icon('i-swords')}Открыть бой</button>
@@ -1747,7 +1747,7 @@ function battleNote(b) {
   const name = esc(b.opponent.name);
   const what = b.mode === 'outcome' ? 'выберет победителей' : 'поставит свои счета';
   if (b.status === 'pending' && b.role === 'creator') return `Ждём, когда ${name} примет бой и ${what}.`;
-  if (b.status === 'pending') return `${name} вызывает тебя. ${b.mode === 'outcome' ? 'Выбери, кто победит' : 'Поставь свои счета'} и прими бой.`;
+  if (b.status === 'pending') return `${name} бросает тебе вызов. ${b.mode === 'outcome' ? 'Выбери, кто победит' : 'Поставь свои счета'} и прими бой.`;
   if (b.status === 'active') return b.decided ? `Сыграно ${b.decided} из ${b.total}.` : 'Бой принят. Ждём матчи.';
   if (b.status === 'done') return b.result === 'win' ? 'Ты точнее. Красиво!' : b.result === 'lose' ? `В этот раз точнее ${name}.` : 'Одинаково точно.';
   if (b.status === 'declined') return b.role === 'creator' ? `${name}: бой отклонён.` : 'Бой отклонён.';
