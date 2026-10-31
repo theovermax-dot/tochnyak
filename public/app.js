@@ -4,6 +4,7 @@ import { LEGAL } from './legal.js';
 
 const tg = window.Telegram && window.Telegram.WebApp;
 const initData = tg ? tg.initData : '';
+const isPhone = () => (tg ? ['ios', 'android', 'android_x'].includes(tg.platform) : matchMedia('(pointer: coarse)').matches);
 
 const LEAGUES = {
   PL: 'АПЛ', PD: 'Ла Лига', SA: 'Серия А', BL1: 'Бундеслига', FL1: 'Лига 1', CL: 'Лига чемпионов', DED: 'Эредивизи'
@@ -126,8 +127,9 @@ function setupTelegram() {
     if (tg.setBottomBarColor) tg.setBottomBarColor('#02060E');
     if (tg.disableVerticalSwipes) tg.disableVerticalSwipes();
     // Полный экран везде, где Telegram это умеет: телефоны, Telegram Desktop и macOS.
+    // На телефоне всегда полный экран. На компьютере — как игрок выбрал кнопкой в шапке.
     let wantFull = true;
-    try { wantFull = localStorage.getItem('tochnyak_fullscreen') !== '0'; } catch { /* по умолчанию полный экран */ }
+    if (!isPhone()) { try { wantFull = localStorage.getItem('tochnyak_fullscreen') !== '0'; } catch { /* по умолчанию полный экран */ } }
     if (wantFull && tg.isVersionAtLeast && tg.isVersionAtLeast('8.0') && tg.requestFullscreen && !tg.isFullscreen) tg.requestFullscreen();
   } catch { /* не все клиенты это умеют */ }
   syncSafeArea();
@@ -1696,8 +1698,9 @@ document.addEventListener('click', async (e) => {
 // ---------- Полный экран: одна кнопка «развернуть / свернуть» ----------
 
 const FS_KEY = 'tochnyak_fullscreen';
-const tgFullscreen = () => Boolean(tg && tg.requestFullscreen && tg.isVersionAtLeast && tg.isVersionAtLeast('8.0'));
-const docFullscreen = () => Boolean(!tgFullscreen() && document.documentElement.requestFullscreen && document.fullscreenEnabled);
+// Кнопка только для компьютера: на телефоне приложение и так открыто на весь экран.
+const tgFullscreen = () => Boolean(tg && !isPhone() && tg.requestFullscreen && tg.isVersionAtLeast && tg.isVersionAtLeast('8.0'));
+const docFullscreen = () => Boolean(!tg && !isPhone() && document.documentElement.requestFullscreen && document.fullscreenEnabled);
 const isFull = () => (tgFullscreen() ? Boolean(tg.isFullscreen) : Boolean(document.fullscreenElement));
 
 function syncFsButton() {
@@ -2164,11 +2167,33 @@ async function battleAction(action) {
 const VIEWS4 = ['front', 'right', 'back', 'left'];
 const FRAMES12 = Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, '0'));
 const DEG_PER_PX = 1.1;
-const spin = { angle: 0, els: new Set(), raf: 0, velocity: 0, dragging: false };
+const spin = { angle: 0, els: new Set(), raf: 0, velocity: 0, dragging: false, touchedAt: 0, autoRaf: 0, autoPrev: 0 };
+const AUTO_DEG_PER_MS = 0.024; // сам по себе медленно крутится, как на витрине
+const AUTO_PAUSE_MS = 2500;    // после касания ждём, прежде чем снова крутить
+const reduceMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+// Медленное вращение, пока персонажа не трогают. Без вибрации и только когда он на экране.
+function autoSpin(now) {
+  spin.autoRaf = 0;
+  const live = [...spin.els].some((el) => el.isConnected && el.offsetParent !== null);
+  if (!live || reduceMotion() || document.hidden) { spin.autoPrev = 0; return; }
+  const dt = spin.autoPrev ? Math.min(50, now - spin.autoPrev) : 0;
+  spin.autoPrev = now;
+  if (!spin.dragging && Math.abs(spin.velocity) <= 0.03 && now - spin.touchedAt > AUTO_PAUSE_MS) {
+    spin.angle += dt * AUTO_DEG_PER_MS;
+    paintSpin();
+  }
+  spin.autoRaf = requestAnimationFrame(autoSpin);
+}
+function startAutoSpin() {
+  if (!spin.autoRaf) { spin.autoPrev = 0; spin.autoRaf = requestAnimationFrame(autoSpin); }
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden) startAutoSpin(); });
 
 function spinStep() {
   // Остановка на ближайшем ракурсе: у Точняка через 90°, у остальных через 30°.
-  for (const el of spin.els) if (el.isConnected && el.dataset.frames === '4') return 90;
+  // Считаем только видимых: Точняк в скрытом профиле не должен мешать крутить образ в магазине.
+  for (const el of spin.els) if (el.isConnected && el.offsetParent !== null && el.dataset.frames === '4') return 90;
   return 30;
 }
 
@@ -2190,7 +2215,7 @@ function mountSpinners() {
     // iOS: не даём странице и Telegram уехать, пока палец крутит персонажа.
     el.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
     el.addEventListener('pointerdown', (e) => {
-      spin.dragging = true; spin.velocity = 0;
+      spin.dragging = true; spin.velocity = 0; spin.touchedAt = performance.now();
       cancelAnimationFrame(spin.raf);
       lastX = e.clientX; lastT = performance.now();
       el.setPointerCapture(e.pointerId);
@@ -2208,6 +2233,7 @@ function mountSpinners() {
     const end = () => {
       if (!spin.dragging) return;
       spin.dragging = false;
+      spin.touchedAt = performance.now();
       el.classList.remove('grab');
       if (performance.now() - lastT > 80) spin.velocity = 0;
       coast();
@@ -2216,6 +2242,7 @@ function mountSpinners() {
     el.addEventListener('pointercancel', end);
   });
   paintSpin();
+  startAutoSpin();
 }
 
 function setAngle(a) {
@@ -2232,6 +2259,7 @@ function coast() {
   const step = (now) => {
     const dt = Math.min(40, now - prev); prev = now;
     if (Math.abs(spin.velocity) > 0.03) {
+      spin.touchedAt = now;
       setAngle(spin.angle + spin.velocity * dt);
       spin.velocity *= Math.pow(0.993, dt);
       spin.raf = requestAnimationFrame(step);
@@ -2264,9 +2292,11 @@ function paintSpin() {
       oi = clamp01((0.58 - p) / 0.16);
       oj = clamp01((p - 0.42) / 0.16);
     } else {
-      // Соседние кадры: следующий проявляется поверх текущего, без «просвечивания».
-      oi = p < 0.6 ? 1 : 0;
-      oj = clamp01((p - 0.4) / 0.2);
+      // Соседние кадры: следующий плавно проявляется поверх текущего (без «просвечивания» насквозь),
+      // поэтому 12 кадров читаются как непрерывный поворот.
+      const t = clamp01((p - 0.15) / 0.7);
+      oj = t * t * (3 - 2 * t);
+      oi = p < 0.85 ? 1 : 0;
     }
     el.querySelectorAll('.spin-imgs img').forEach((img, k) => {
       const o = k === i ? oi : k === j ? oj : 0;
