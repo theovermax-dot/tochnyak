@@ -335,7 +335,17 @@ async function handleApi(request, env, url, now, ctx) {
        WHERE m.utc_date BETWEEN ?2 AND ?3 AND m.status NOT IN ('CANCELLED')
        ORDER BY m.utc_date, m.id`
     ).bind(tgUser.id, from, to).all();
-    return json({ matches: results.map((m) => matchOut(m, env, now)), now: nowIso(now) });
+    // Как ставят другие: сколько прогнозов на П1, ничью и П2 (по любому типу прогноза).
+    const { results: crowd } = await db.prepare(
+      `SELECT p.match_id AS id, SUM(p.home > p.away) AS h, SUM(p.home = p.away) AS d, SUM(p.home < p.away) AS a
+       FROM predictions p JOIN matches m ON m.id = p.match_id
+       WHERE m.utc_date BETWEEN ?1 AND ?2 GROUP BY p.match_id`
+    ).bind(from, to).all();
+    const byId = new Map(crowd.map((c) => [c.id, { home: c.h || 0, draw: c.d || 0, away: c.a || 0 }]));
+    return json({
+      matches: results.map((m) => ({ ...matchOut(m, env, now), crowd: byId.get(m.id) || { home: 0, draw: 0, away: 0 } })),
+      now: nowIso(now)
+    });
   }
 
   // Мои прогнозы: будущие и сыгранные, свежие сверху.

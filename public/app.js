@@ -392,11 +392,13 @@ document.addEventListener('click', (e) => {
   if (unfriend) { removeFriend(unfriend.dataset.unfriend, unfriend.dataset.name); return; }
   const fopen = t.closest('[data-friend-open]');
   if (fopen) { openFriend(fopen.dataset.friendOpen); return; }
+  const qp = t.closest('[data-qp]');
+  if (qp) { quickPick(Number(qp.dataset.id), qp.dataset.qp, qp); return; }
   const row = t.closest('[data-match]');
   if (row) {
     const id = Number(row.dataset.match);
     const m = state.matches.find((x) => x.id === id) || state.my.find((x) => x.id === id);
-    if (m) openSheet(m);
+    if (m) openSheet(m, row.dataset.mode);
   }
 });
 
@@ -538,31 +540,103 @@ function matchRow(m) {
   </button>`;
 }
 
+// ---------- Главная: матч дня и прогноз в одно касание ----------
+// Карточка показывает ближайший матч без прогноза. Нажал П1 / Х / П2 — прогноз сохранён, и сразу следующий матч.
+
+let heroTimer = 0;
+const crowdTotal = (c) => (c ? c.home + c.draw + c.away : 0);
+const crowdPct = (c, k) => { const t = crowdTotal(c); return t ? Math.round((c[k] * 100) / t) : 0; };
+
+function countdownText(ms) {
+  if (ms <= 0) return 'приём закрыт';
+  const h = Math.floor(ms / 3600000);
+  const m = Math.floor((ms % 3600000) / 60000);
+  const sec = Math.floor((ms % 60000) / 1000);
+  if (h >= 24) return `${Math.floor(h / 24)} д ${h % 24} ч`;
+  if (h >= 1) return `${h} ч ${String(m).padStart(2, '0')} мин`;
+  return `${m}:${String(sec).padStart(2, '0')}`;
+}
+
 function renderHero(list) {
-  const next = list.find((m) => m.open && !m.prediction) || list.find((m) => m.open);
-  if (!next) { $('hero').innerHTML = ''; return; }
-  const left = Date.parse(next.lockAt) - Date.now();
-  const p = next.prediction;
+  clearInterval(heroTimer);
+  const open = list.filter((m) => m.open);
+  const queue = open.filter((m) => !m.prediction);
+  const today = list.filter((m) => dayDiff(m.utcDate) === 0 && !ENDED.includes(m.status));
+  const todayDone = today.filter((m) => m.prediction).length;
+  const progress = today.length ? `<div class="hero-progress">
+      <span>Сегодня ${todayDone ? `<b>${todayDone} из ${today.length}</b> с прогнозом` : `<b>${today.length}</b> ${plural(today.length, ['матч', 'матча', 'матчей'])}`}</span>
+      <i style="--p:${Math.round((todayDone * 100) / today.length)}%"></i>
+    </div>` : '';
+  const next = queue[0];
+  if (!next) {
+    const upcoming = open[0];
+    $('hero').innerHTML = open.length || today.length ? `
+      <div class="glass hero hero-done">
+        <span class="hero-done-ic">🔥</span>
+        <b>Все прогнозы сделаны</b>
+        <span class="muted small">${upcoming ? `Ближайший матч ${esc(whenShort(upcoming.utcDate))}. Пока ждёшь, брось вызов другу` : 'Новые матчи скоро появятся. Пока ждёшь, брось вызов другу'}</span>
+        <button type="button" class="btn btn-primary" data-go="friends">${icon('i-swords')}Вызвать друга на бой</button>
+      </div>${progress}` : '';
+    return;
+  }
+  const c = next.crowd;
+  const total = crowdTotal(c);
+  const opt = (k, top, name) => `<button type="button" class="qp" data-qp="${k}" data-id="${next.id}">
+      <b class="num">${top}</b><span>${esc(name)}</span>${total ? `<em class="num">${crowdPct(c, k)}%</em>` : ''}</button>`;
   $('hero').innerHTML = `
-    <div class="glass hero">
-      <div class="hero-meta"><span class="league-tag">${esc(league(next))}</span><span class="badge">${icon('i-lock')}<span class="num">${untilText(left)}</span></span></div>
+    <div class="glass hero hero-quick" data-hero="${next.id}">
+      <div class="hero-meta"><span class="league-tag">${esc(league(next))}</span>
+        <span class="badge">${icon('i-lock')}<span class="num" id="hero-count">${countdownText(Date.parse(next.lockAt) - Date.now())}</span></span></div>
       <div class="versus">
         <span class="team">${crest(next.home, 'crest-lg')}<span>${esc(next.home.short)}</span></span>
         <span class="hero-time"><span class="num">${timeFmt.format(new Date(next.utcDate))}</span><span class="muted small">${esc(dayLabel(next.utcDate).toLowerCase())} · МСК</span></span>
         <span class="team">${crest(next.away, 'crest-lg')}<span>${esc(next.away.short)}</span></span>
       </div>
-      <button type="button" class="btn btn-primary" data-match="${next.id}">${p ? `Мой прогноз <span class="num">${predText(p)}</span>` : 'Сделать прогноз'}</button>
-      <p class="hero-prize">Победа <span class="prize-a num">+2${icon('i-target')}</span> · точный счёт <span class="prize-a num">+12${icon('i-target')}</span></p>
-    </div>`;
+      <p class="hero-q">Кто победит? <span>+2${icon('i-target')} за верный исход</span></p>
+      <div class="qp-grid">${opt('home', 'П1', next.home.short)}${opt('draw', 'Х', 'Ничья')}${opt('away', 'П2', next.away.short)}</div>
+      <div class="hero-foot">
+        <span class="muted small">${total ? `Уже ${total} ${plural(total, ['прогноз', 'прогноза', 'прогнозов'])}` : 'Будь первым'}${queue.length > 1 ? ` · ещё ${queue.length - 1} ${plural(queue.length - 1, ['ждёт', 'ждут', 'ждут'])}` : ''}</span>
+        <button type="button" class="link hero-exact" data-match="${next.id}" data-mode="score">Точный счёт, до +12 →</button>
+      </div>
+    </div>${progress}`;
+  heroTimer = setInterval(() => {
+    const el = $('hero-count');
+    if (!el || state.view !== 'matches') { clearInterval(heroTimer); return; }
+    el.textContent = countdownText(Date.parse(next.lockAt) - Date.now());
+  }, 1000);
+}
+
+async function quickPick(id, key, btn) {
+  const m = state.matches.find((x) => x.id === id);
+  if (!m || !m.open) return;
+  document.querySelectorAll('.qp').forEach((b) => { b.disabled = true; });
+  btn.classList.add('picked');
+  haptic('medium');
+  try {
+    const res = await api('/api/predictions', { method: 'POST', body: { matchId: id, kind: 'outcome', pick: key } });
+    m.prediction = { home: res.prediction.home, away: res.prediction.away, kind: 'outcome', points: null };
+    if (m.crowd) m.crowd[key] += 1;
+    haptic('success');
+    toast(`${OUT_LABEL[key]} залочено`);
+    const card = document.querySelector('.hero-quick');
+    if (card) card.classList.add('leaving');
+    setTimeout(renderMatches, 260);
+  } catch (err) {
+    haptic('error');
+    toast(err.message);
+    if (err.code === 'locked') { m.open = false; loadMatches(); return; }
+    document.querySelectorAll('.qp').forEach((b) => { b.disabled = false; });
+    btn.classList.remove('picked');
+  }
 }
 
 // ---------- Окно матча: прогноз или итог ----------
 
-function openSheet(m) {
+function openSheet(m, mode) {
   const p = m.prediction;
   const out = isOutcome(p);
   // По умолчанию — прогноз на победу, точный счёт второй вкладкой.
-  state.sheet = { match: m, mode: p && !out ? 'score' : 'outcome', home: p && !out ? p.home : 1, away: p && !out ? p.away : 0, pick: out ? outcomeKey(p) : null };
+  state.sheet = { match: m, mode: mode === 'score' || (p && !out) ? 'score' : 'outcome', home: p && !out ? p.home : 1, away: p && !out ? p.away : 0, pick: out ? outcomeKey(p) : null };
   $('sheet-meta').innerHTML = `<span class="league-tag">${esc(league(m))}</span><span>${esc(whenShort(m.utcDate))}</span>`;
   renderSheet();
   $('sheet').hidden = false;
@@ -595,8 +669,9 @@ function renderSheet() {
       <button type="button" role="tab" data-pmode="score" aria-selected="${s.mode === 'score'}">Точный счёт</button>
     </div>`;
   if (s.mode === 'outcome') {
+    const total = crowdTotal(m.crowd);
     const opt = (key, top, name) => `<button type="button" class="out-btn" data-out="${key}" aria-pressed="${s.pick === key}">
-      <b class="num">${top}</b><span>${esc(name)}</span></button>`;
+      <b class="num">${top}</b><span>${esc(name)}</span>${total ? `<em class="num">${crowdPct(m.crowd, key)}% игроков</em>` : ''}</button>`;
     $('sheet-body').innerHTML = `
       ${teamsHead(m, '<span class="vs-dash" aria-hidden="true">vs</span>')}
       ${modes}
@@ -857,10 +932,57 @@ const SHARE_APPS = [
 
 const prettyLink = (link) => String(link || '').replace(/^https?:\/\//, '');
 
+// Картинка-приглашение для сторис 1080×1920: рисуем прямо в приложении.
+function loadImg(src) {
+  return new Promise((resolve) => { const i = new Image(); i.onload = () => resolve(i); i.onerror = () => resolve(null); i.src = src; });
+}
+
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+}
+
+async function makeStoryImage(link) {
+  const W = 1080; const H = 1920;
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+  const ctx = cv.getContext('2d');
+  try { await Promise.all([document.fonts.load('800 100px Unbounded'), document.fonts.load('700 40px Manrope')]); } catch { /* системный шрифт тоже ок */ }
+  const disp = "'Unbounded', 'Arial Black', sans-serif";
+  const body = "'Manrope', -apple-system, 'Segoe UI', sans-serif";
+  ctx.fillStyle = '#02060E'; ctx.fillRect(0, 0, W, H);
+  let g = ctx.createRadialGradient(W * 0.85, 0, 0, W * 0.85, 0, 1100);
+  g.addColorStop(0, 'rgba(197,3,55,0.95)'); g.addColorStop(0.45, 'rgba(197,3,55,0.3)'); g.addColorStop(1, 'rgba(2,6,14,0)');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  g = ctx.createRadialGradient(W / 2, 1150, 0, W / 2, 1150, 520);
+  g.addColorStop(0, 'rgba(197,3,55,0.55)'); g.addColorStop(1, 'rgba(197,3,55,0)');
+  ctx.fillStyle = g; ctx.fillRect(0, 500, W, 1200);
+  // Логотип-мишень и название
+  ctx.strokeStyle = '#FF2E63'; ctx.lineWidth = 9;
+  [46, 24].forEach((r) => { ctx.beginPath(); ctx.arc(W / 2, 200, r, 0, Math.PI * 2); ctx.stroke(); });
+  ctx.fillStyle = '#F5F2F4'; ctx.beginPath(); ctx.arc(W / 2, 200, 9, 0, Math.PI * 2); ctx.fill();
+  ctx.textAlign = 'center'; ctx.fillStyle = '#F5F2F4';
+  ctx.font = `800 64px ${disp}`; ctx.fillText('ТОЧНЯК', W / 2, 320);
+  ctx.font = `800 88px ${disp}`; ctx.fillText('Бросаю тебе', W / 2, 500); ctx.fillText('вызов', W / 2, 610);
+  ctx.fillStyle = 'rgba(245,242,244,0.72)'; ctx.font = `700 42px ${body}`;
+  ctx.fillText('Угадай победителя и счёт матчей.', W / 2, 700); ctx.fillText('Посмотрим, кто из нас точнее', W / 2, 756);
+  // Персонаж
+  const ch = await loadImg(`/chars/${encodeURIComponent((state.profile && state.profile.character) || 'tochnyak')}/front.webp`);
+  if (ch) { const h = 820; const w = (ch.width / ch.height) * h; ctx.drawImage(ch, (W - w) / 2, 800, w, h); }
+  ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.beginPath(); ctx.ellipse(W / 2, 1625, 210, 26, 0, 0, Math.PI * 2); ctx.fill();
+  // Ссылка внизу
+  roundRect(ctx, 90, 1680, W - 180, 150, 44);
+  ctx.fillStyle = 'rgba(255,255,255,0.08)'; ctx.fill(); ctx.strokeStyle = 'rgba(255,255,255,0.18)'; ctx.lineWidth = 2; ctx.stroke();
+  ctx.fillStyle = '#ff8fab'; ctx.font = `700 30px ${body}`; ctx.fillText('Играть в Telegram', W / 2, 1738);
+  ctx.fillStyle = '#F5F2F4'; ctx.font = `800 40px ${body}`; ctx.fillText(prettyLink(link), W / 2, 1796);
+  return new Promise((resolve) => cv.toBlob((b) => resolve(b), 'image/png'));
+}
+
 async function openInviteSheet() {
   haptic('light');
   let link = '';
   try { link = await friendLink(); } catch (err) { toast(err.message); return; }
+  // Картинку для сторис готовим заранее: iPhone разрешает «Поделиться» только сразу после нажатия.
+  state.story = makeStoryImage(link).then((blob) => { state.storyBlob = blob; return blob; }).catch(() => null);
   openPanel('<span class="league-tag">Позвать друга</span>', `
     <p class="share-lead">Друг перейдёт по ссылке, войдёт через Telegram и сразу появится у тебя в друзьях.</p>
     <button type="button" class="btn btn-primary btn-tg" data-share="tg"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 4.5L2.8 11.4c-.9.4-.9 1.5 0 1.8l4.4 1.5 1.7 5.3c.2.6 1 .8 1.5.3l2.5-2.3 4.5 3.3c.6.4 1.4.1 1.6-.6L22.2 5.7c.2-.9-.6-1.5-1.2-1.2zM9.5 14.2l8.2-6.6-6.6 7.6-.3 3.1z" fill="currentColor" stroke="none"/></svg>Отправить в Telegram</button>
@@ -894,6 +1016,8 @@ async function copyText(text) {
   } catch { return false; }
 }
 
+document.addEventListener('click', (e) => { if (e.target.closest('[data-open-ig]')) openExternal('https://www.instagram.com/'); });
+
 document.addEventListener('click', async (e) => {
   const btn = e.target.closest('[data-share]');
   if (!btn) return;
@@ -906,9 +1030,33 @@ document.addEventListener('click', async (e) => {
     if (kind === 'wa') { openExternal(`https://wa.me/?text=${encodeURIComponent(message)}`); return; }
     if (kind === 'vk') { openExternal(`https://vk.com/share.php?url=${encodeURIComponent(link)}&title=${encodeURIComponent(INVITE_TEXT)}`); return; }
     if (kind === 'ig') {
-      // Instagram не умеет принимать текст по ссылке: копируем приглашение и открываем Директ.
-      if (await copyText(message)) toast('Приглашение скопировано, вставь его в Директ');
-      openExternal('https://www.instagram.com/direct/inbox/');
+      // Instagram принимает картинку через системное «Поделиться»: сторис или Директ.
+      // Ссылку копируем, чтобы добавить её стикером «Ссылка».
+      const blob = state.storyBlob || (await state.story);
+      await copyText(link);
+      if (blob) {
+        const file = new File([blob], 'tochnyak-invite.png', { type: 'image/png' });
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          try {
+            await navigator.share({ files: [file] });
+            toast('Ссылка скопирована: добавь в сторис стикер «Ссылка»');
+            return;
+          } catch (err) { if (err && err.name === 'AbortError') return; }
+        }
+        // Telegram не дал открыть «Поделиться» — показываем картинку, её можно сохранить.
+        const url = URL.createObjectURL(blob);
+        openPanel('<span class="league-tag">Сторис для Instagram</span>', `
+          <img class="story-prev" src="${url}" alt="Картинка-приглашение для сторис">
+          <ol class="story-steps">
+            <li>Зажми картинку и выбери «Сохранить в Фото».</li>
+            <li>В Instagram выложи её в сторис.</li>
+            <li>Добавь стикер «Ссылка» — ссылка уже скопирована.</li>
+          </ol>
+          <button type="button" class="btn btn-primary" data-open-ig>Открыть Instagram</button>`, { story: true });
+        return;
+      }
+      toast('Ссылка скопирована, вставь её в Instagram');
+      openExternal('https://www.instagram.com/');
       return;
     }
     if (kind === 'more') {
