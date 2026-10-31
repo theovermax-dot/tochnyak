@@ -111,7 +111,9 @@ const COLUMNS = [
   // Версия регистрации, которую игрок прошёл. Старые аккаунты получают 1 и проходят регистрацию заново.
   'ALTER TABLE users ADD COLUMN reg_version INTEGER NOT NULL DEFAULT 1',
   // score — точный счёт, outcome — только исход (П1 / ничья / П2).
-  "ALTER TABLE predictions ADD COLUMN kind TEXT NOT NULL DEFAULT 'score'"
+  "ALTER TABLE predictions ADD COLUMN kind TEXT NOT NULL DEFAULT 'score'",
+  // Режим боя: outcome — на победу (П1 / Х / П2), score — на точный счёт.
+  "ALTER TABLE battles ADD COLUMN mode TEXT NOT NULL DEFAULT 'score'"
 ];
 
 async function migrate(db) {

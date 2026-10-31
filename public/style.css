@@ -459,7 +459,7 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--crimson-hi); ou
 .mstep b { min-width: 22px; text-align: center; font-size: 15px; }
 .dock { position: sticky; bottom: calc(86px + var(--safe-bottom)); z-index: 5; padding-top: 4px; }
 .dock .btn { box-shadow: 0 14px 34px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255,255,255,.25); }
-.dock .btn[disabled] { opacity: 1; background: rgba(40, 30, 38, 0.92); color: var(--faint); box-shadow: 0 14px 34px rgba(0, 0, 0, 0.55); }
+.dock .btn[disabled] { opacity: 1; background: #1e161e; border: 1px solid var(--glass-line); color: var(--faint); box-shadow: 0 14px 34px rgba(0, 0, 0, 0.55); }
 
 /* Экран боя */
 .bhero { border-radius: 28px; padding: 18px 16px 16px; display: flex; flex-direction: column; align-items: center; gap: 10px; position: relative; overflow: hidden; }
@@ -606,3 +606,23 @@ input { -webkit-user-select: text; user-select: text; }
 .out-btn[aria-pressed="true"] { background: var(--crimson); border-color: var(--crimson-hi); box-shadow: 0 10px 24px rgba(197, 3, 55, 0.4); }
 .out-btn[aria-pressed="true"] span { color: #ffd0dc; }
 .out-btn:active { transform: scale(0.97); }
+
+/* Исход в боях: П1 / Х / П2 */
+.ochips { flex: none; display: inline-flex; gap: 4px; padding: 3px; border-radius: 12px; background: rgba(0, 0, 0, 0.28); border: 1px solid var(--glass-line); }
+.ochips button { min-width: 38px; height: 30px; padding: 0 8px; border: none; border-radius: 9px; background: rgba(255, 255, 255, 0.07); color: var(--ink); font-family: 'Unbounded', sans-serif; font-size: 13px; font-weight: 800; }
+.ochips button[aria-pressed="true"] { background: var(--crimson); color: #fff; box-shadow: 0 4px 12px rgba(197, 3, 55, 0.45); }
+.prow .ochips { align-self: center; }
+.bo-teams { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 14px; }
+.bo-teams .crest { width: 26px; height: 26px; box-shadow: none; }
+.bo-teams .crest::after { display: none; }
+.bo-teams .crest img { inset: 3px; width: calc(100% - 6px); height: calc(100% - 6px); filter: none; }
+.bo-teams b { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bo-dash { color: var(--faint); }
+.bo-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 36px; }
+.bo-who { font-size: 13px; font-weight: 700; color: var(--muted); min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bo-val { display: inline-flex; align-items: center; gap: 8px; flex: none; }
+.opill { min-width: 44px; height: 30px; padding: 0 10px; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; background: rgba(255, 255, 255, 0.08); font-family: 'Unbounded', sans-serif; font-size: 13px; font-weight: 800; }
+.opill.hit { background: rgba(124, 240, 169, 0.16); color: var(--green); }
+.olock { display: inline-flex; align-items: center; gap: 5px; height: 30px; padding: 0 10px; border-radius: 10px; background: rgba(255, 255, 255, 0.05); font-size: 12px; font-weight: 700; color: var(--faint); }
+.olock .ic { width: 14px; height: 14px; }
+.mode-tag { display: inline-block; padding: 2px 8px; margin-right: 4px; border-radius: 999px; background: rgba(197, 3, 55, 0.24); color: var(--pink-soft); font-size: 12px; }

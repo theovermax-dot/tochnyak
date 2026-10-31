@@ -361,11 +361,12 @@ async function handleApi(request, env, url, now, ctx) {
 
   if (path === '/api/battles' && method === 'POST') {
     const body = await request.json().catch(() => ({}));
-    const res = await createBattle(db, { userId: tgUser.id, friendCode: body.friend, picks: body.picks, now, lockMs: lockMs(env) });
+    const mode = body.mode === 'score' ? 'score' : 'outcome';
+    const res = await createBattle(db, { userId: tgUser.id, friendCode: body.friend, picks: body.picks, mode, now, lockMs: lockMs(env) });
     if (res.error) return error(...res.error);
     await addNotice(db, res.opponentId, 'battle_invite', `${tgUser.firstName || 'Друг'} вызывает тебя на бой · ${body.picks.length} ${body.picks.length === 1 ? 'матч' : body.picks.length < 5 ? 'матча' : 'матчей'}`, `#battle-${res.id}`, now);
     later(ctx, () => notify(env, res.opponentId,
-      `⚔️ <b>${escHtml(tgUser.firstName || 'Друг')} вызывает тебя на бой</b>\n\nМатчей в бою: ${body.picks.length}. Ставь свои счета, пока матчи не начались. Победит тот, кто окажется точнее.`,
+      `⚔️ <b>${escHtml(tgUser.firstName || 'Друг')} вызывает тебя на бой</b>\n\nМатчей в бою: ${body.picks.length}, ${mode === 'outcome' ? 'ставим на победу' : 'ставим точный счёт'}. Делай прогнозы, пока матчи не начались. Победит тот, кто окажется точнее.`,
       'Принять бой', `${url.origin}/#battle-${res.id}`));
     return json({ id: res.id });
   }

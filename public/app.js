@@ -349,6 +349,10 @@ document.addEventListener('click', (e) => {
   if (legal) { e.preventDefault(); openLegal(legal.dataset.legal); return; }
   if (t.closest('[data-econ]')) { openEcon(); return; }
   if (t.closest('[data-add-friend]')) { openAddFriend(); return; }
+  const och = t.closest('[data-och]');
+  if (och) { chooseOut(och.dataset.och); return; }
+  const bmode = t.closest('[data-bmode]');
+  if (bmode) { setDraftMode(bmode.dataset.bmode); return; }
   const st = t.closest('[data-st]');
   if (st) { stepPick(st.dataset.st); return; }
   const draft = t.closest('[data-draft]');
@@ -484,6 +488,7 @@ const LEAGUE_SHORT = { CL: 'ЛЧ', PL: 'АПЛ', PD: 'Ла Лига', SA: 'Се�
 // Награда за точный счёт: 10 за счёт + по 1 за «обе забьют» и тотал, которые при точном счёте угаданы всегда.
 // Должно совпадать с src/scoring.js. Редкий исход может дать ещё больше.
 const PRIZE = { aura: 12, coins: 5 };
+const prizeRange = () => `<span class="prize-a num">+2–12${icon('i-target')}</span>`;
 const prizeInline = () => `<span class="prize-a num">+${PRIZE.aura}${icon('i-target')}</span><span class="prize-c num">+${PRIZE.coins}<span class="coin" aria-hidden="true"></span></span>`;
 
 function timeCell(m) {
@@ -506,7 +511,7 @@ function matchTag(m) {
   }
   if (m.open) {
     if (p) return `<span class="tag tag-pred num">${predText(p)}</span>`;
-    return `<span class="mr-cta"><span class="tag tag-open">Прогноз</span><span class="mr-prize">${prizeInline()}</span></span>`;
+    return `<span class="mr-cta"><span class="tag tag-open">Прогноз</span><span class="mr-prize">${prizeRange()}</span></span>`;
   }
   if (m.status === 'POSTPONED') return '<span class="tag tag-none">—</span>';
   return p ? `<span class="tag tag-wait num">${predText(p)}</span>` : `<span class="tag tag-none">${icon('i-lock')}</span>`;
@@ -534,8 +539,8 @@ function renderHero(list) {
         <span class="hero-time"><span class="num">${timeFmt.format(new Date(next.utcDate))}</span><span class="muted small">${esc(dayLabel(next.utcDate).toLowerCase())} · МСК</span></span>
         <span class="team">${crest(next.away, 'crest-lg')}<span>${esc(next.away.short)}</span></span>
       </div>
-      <button type="button" class="btn btn-primary" data-match="${next.id}">${p ? `Мой прогноз <span class="num">${predText(p)}</span>` : 'Вангануть счёт'}</button>
-      <p class="hero-prize">За точный счёт ${prizeInline()}</p>
+      <button type="button" class="btn btn-primary" data-match="${next.id}">${p ? `Мой прогноз <span class="num">${predText(p)}</span>` : 'Сделать прогноз'}</button>
+      <p class="hero-prize">Победа <span class="prize-a num">+2${icon('i-target')}</span> · точный счёт <span class="prize-a num">+12${icon('i-target')}</span></p>
     </div>`;
 }
 
@@ -544,7 +549,8 @@ function renderHero(list) {
 function openSheet(m) {
   const p = m.prediction;
   const out = isOutcome(p);
-  state.sheet = { match: m, mode: out ? 'outcome' : 'score', home: p && !out ? p.home : 1, away: p && !out ? p.away : 0, pick: out ? outcomeKey(p) : null };
+  // По умолчанию — прогноз на победу, точный счёт второй вкладкой.
+  state.sheet = { match: m, mode: p && !out ? 'score' : 'outcome', home: p && !out ? p.home : 1, away: p && !out ? p.away : 0, pick: out ? outcomeKey(p) : null };
   $('sheet-meta').innerHTML = `<span class="league-tag">${esc(league(m))}</span><span>${esc(whenShort(m.utcDate))}</span>`;
   renderSheet();
   $('sheet').hidden = false;
@@ -573,8 +579,8 @@ function renderSheet() {
 
   const left = Date.parse(m.lockAt) - Date.now();
   const modes = `<div class="glass segmented" role="tablist" aria-label="Тип прогноза">
+      <button type="button" role="tab" data-pmode="outcome" aria-selected="${s.mode === 'outcome'}">Победа</button>
       <button type="button" role="tab" data-pmode="score" aria-selected="${s.mode === 'score'}">Точный счёт</button>
-      <button type="button" role="tab" data-pmode="outcome" aria-selected="${s.mode === 'outcome'}">Только победа</button>
     </div>`;
   if (s.mode === 'outcome') {
     const opt = (key, top, name) => `<button type="button" class="out-btn" data-out="${key}" aria-pressed="${s.pick === key}">
@@ -587,7 +593,7 @@ function renderSheet() {
       </div>
       <button type="button" id="save-btn" class="btn btn-primary"${s.pick ? '' : ' disabled'}>${icon('i-lock')}${s.pick ? `Залочить <span class="num">${OUT_LABEL[s.pick]}</span>` : 'Выбери исход'}</button>
       <p class="hero-prize">За угаданный исход <span class="prize-a num">+2${icon('i-target')}</span><span class="prize-c num">+1<span class="coin" aria-hidden="true"></span></span></p>
-      <p class="sheet-foot">Точный счёт приносит до 6 раз больше. Приём закроется через <span class="num">${untilText(left)}</span></p>
+      <p class="sheet-foot">Уверен в счёте? Вкладка «Точный счёт» даёт до +12. Приём закроется через <span class="num">${untilText(left)}</span></p>
       <p id="sheet-error" class="error center" role="alert" hidden></p>`;
     return;
   }
@@ -1238,7 +1244,31 @@ function showIncomingBattle() {
 // Двое ставят свои счета на одни и те же матчи. На интерес: аура и монеты за бой не начисляются.
 
 const BATTLE_MAX = 10;
-const BATTLE_RULE = 'Точный счёт 3 · разница 2 · исход 1. На интерес: аура и монеты не начисляются.';
+const BATTLE_RULES = {
+  outcome: 'Угадал победителя или ничью — 1 очко. На интерес: аура и монеты не начисляются.',
+  score: 'Точный счёт 3 · разница 2 · исход 1. На интерес: аура и монеты не начисляются.'
+};
+const OUT_SCORE = { home: { home: 1, away: 0 }, draw: { home: 0, away: 0 }, away: { home: 0, away: 1 } };
+
+// Три кнопки П1 / Х / П2. ctx d — черновик нового боя, b — открытый бой.
+function outChips(ctx, id, pick) {
+  return `<span class="ochips" role="group" aria-label="Исход">${['home', 'draw', 'away'].map((k) =>
+    `<button type="button" data-och="${ctx}:${id}:${k}" aria-pressed="${pick === k}">${OUT_LABEL[k]}</button>`).join('')}</span>`;
+}
+
+function chooseOut(spec) {
+  const [ctx, id, key] = spec.split(':');
+  const map = ctx === 'd' ? state.draft && state.draft.picks : state.battle && state.battle.edit;
+  const p = map && map.get(Number(id));
+  if (!p) return;
+  p.pick = key;
+  haptic('select');
+  if (ctx === 'd') renderDraft(); else renderBattle();
+}
+
+const draftDefault = (mode) => (mode === 'outcome' ? { pick: null } : { home: 1, away: 0 });
+const pickReady = (mode, p) => (mode === 'outcome' ? Boolean(p.pick) : true);
+const pickBody = (mode, matchId, p) => (mode === 'outcome' ? { matchId, ...OUT_SCORE[p.pick] } : { matchId, home: p.home, away: p.away });
 
 async function loadBattles() {
   try {
@@ -1311,7 +1341,7 @@ function stepPick(spec) {
 // Новый бой: выбор матчей и свои счета.
 async function newBattle(code, name) {
   haptic('light');
-  state.draft = { code, name, picks: new Map() };
+  state.draft = { code, name, mode: 'outcome', picks: new Map() };
   go('battle-new');
   $('bn-list').innerHTML = '<div class="glass empty"><span class="spinner" aria-hidden="true"></span></div>';
   renderDraft();
@@ -1330,17 +1360,18 @@ function toggleDraft(id) {
   if (!d) return;
   if (d.picks.has(id)) d.picks.delete(id);
   else if (d.picks.size >= BATTLE_MAX) { toast(`В бою максимум ${BATTLE_MAX} матчей`); haptic('error'); return; }
-  else d.picks.set(id, { home: 1, away: 0 });
+  else d.picks.set(id, draftDefault(d.mode));
   haptic('select');
   renderDraft();
 }
 
-function draftRow(m, p) {
-  const team = (side) => `<span class="prow-team">${crest(m[side])}<b>${esc(m[side].short)}</b>${p ? miniStep('d', m.id, side, p[side], m[side].short) : ''}</span>`;
+function draftRow(m, p, mode) {
+  const time = `<span class="prow-time"><b class="num">${timeFmt.format(new Date(m.utcDate))}</b><span>${esc(LEAGUE_SHORT[m.competition] || league(m))}</span></span>`;
+  const team = (side) => `<span class="prow-team">${crest(m[side])}<b>${esc(m[side].short)}</b>${p && mode === 'score' ? miniStep('d', m.id, side, p[side], m[side].short) : ''}</span>`;
   return `<div class="prow${p ? ' on' : ''}"${p ? '' : ` data-draft="${m.id}" role="button" tabindex="0" aria-label="${esc(`Добавить ${m.home.short} — ${m.away.short}`)}"`}>
     <button type="button" class="prow-tick" data-draft="${m.id}" aria-pressed="${Boolean(p)}" aria-label="${p ? 'Убрать матч' : 'Добавить матч'}">${icon('i-check')}</button>
     <span class="prow-teams">${team('home')}${team('away')}</span>
-    ${p ? '' : `<span class="prow-time"><b class="num">${timeFmt.format(new Date(m.utcDate))}</b><span>${esc(league(m))}</span></span>`}
+    ${p && mode === 'outcome' ? outChips('d', m.id, p.pick) : p ? '' : time}
   </div>`;
 }
 
@@ -1352,11 +1383,18 @@ function renderDraft() {
     <span class="vs-mark">${icon('i-swords')}</span>
     <b>${esc(d.name)}</b><span class="avatar avatar-sm" aria-hidden="true">${esc(initials(d.name))}</span>
   </div>
-  <p class="hint">Отметь до ${BATTLE_MAX} матчей и поставь свои счета. ${esc(d.name)} поставит свои, а после матчей посмотрим, кто точнее. ${BATTLE_RULE}</p>`;
+  <div class="glass segmented" role="tablist" aria-label="Режим боя">
+    <button type="button" role="tab" data-bmode="outcome" aria-selected="${d.mode === 'outcome'}">На победу</button>
+    <button type="button" role="tab" data-bmode="score" aria-selected="${d.mode === 'score'}">На точный счёт</button>
+  </div>
+  <p class="hint">Отметь до ${BATTLE_MAX} матчей и ${d.mode === 'outcome' ? 'выбери, кто победит' : 'поставь точный счёт'}. ${esc(d.name)} сделает свои прогнозы, а после матчей посмотрим, кто точнее. ${BATTLE_RULES[d.mode]}</p>`;
   const n = d.picks.size;
+  const missing = [...d.picks.values()].filter((p) => !pickReady(d.mode, p)).length;
   $('bn-count').textContent = `${n} из ${BATTLE_MAX}`;
-  $('bn-send').disabled = !n;
-  $('bn-send').innerHTML = n ? `${icon('i-swords')}Бросить вызов · <span class="num">${n}</span>` : 'Выбери матчи';
+  $('bn-send').disabled = !n || missing > 0;
+  $('bn-send').innerHTML = !n ? 'Выбери матчи'
+    : missing ? `Выбери исход ещё в ${missing} ${plural(missing, ['матче', 'матчах', 'матчах'])}`
+      : `${icon('i-swords')}Бросить вызов · <span class="num">${n}</span>`;
   if (!state.matches.length) return;
   const open = state.matches.filter((m) => m.open);
   if (!open.length) {
@@ -1371,8 +1409,17 @@ function renderDraft() {
   }
   $('bn-list').innerHTML = groups.map((g) => `<section class="day">
     <h3 class="day-head"><span>${esc(g.label)}</span><span class="day-count">МСК</span></h3>
-    <div class="glass list-card">${g.items.map((m) => draftRow(m, d.picks.get(m.id))).join('')}</div>
+    <div class="glass list-card">${g.items.map((m) => draftRow(m, d.picks.get(m.id), d.mode)).join('')}</div>
   </section>`).join('');
+}
+
+function setDraftMode(mode) {
+  const d = state.draft;
+  if (!d || d.mode === mode) return;
+  d.mode = mode;
+  for (const id of d.picks.keys()) d.picks.set(id, draftDefault(mode));
+  haptic('select');
+  renderDraft();
 }
 
 $('bn-send').addEventListener('click', async () => {
@@ -1381,8 +1428,8 @@ $('bn-send').addEventListener('click', async () => {
   const btn = $('bn-send');
   btn.disabled = true;
   try {
-    const picks = [...d.picks].map(([matchId, p]) => ({ matchId, home: p.home, away: p.away }));
-    const res = await api('/api/battles', { method: 'POST', body: { friend: d.code, picks } });
+    const picks = [...d.picks].map(([matchId, p]) => pickBody(d.mode, matchId, p));
+    const res = await api('/api/battles', { method: 'POST', body: { friend: d.code, mode: d.mode, picks } });
     haptic('success');
     toast(`Вызов отправлен: ${d.name}`);
     state.draft = null;
@@ -1414,7 +1461,9 @@ function setBattle(data) {
   const edit = new Map();
   if (canEdit) {
     for (const it of b.items) {
-      if (it.open) edit.set(it.matchId, it.mine ? { home: it.mine.home, away: it.mine.away } : { home: 1, away: 0 });
+      if (!it.open) continue;
+      if (b.mode === 'outcome') edit.set(it.matchId, { pick: it.mine ? outcomeKey(it.mine) : null });
+      else edit.set(it.matchId, it.mine ? { home: it.mine.home, away: it.mine.away } : { home: 1, away: 0 });
     }
   }
   state.battle = { battle: b, matches: data.matches, edit };
@@ -1422,8 +1471,9 @@ function setBattle(data) {
 
 function battleNote(b) {
   const name = esc(b.opponent.name);
-  if (b.status === 'pending' && b.role === 'creator') return `Ждём, когда ${name} примет бой и поставит свои счета.`;
-  if (b.status === 'pending') return `${name} вызывает тебя. Поставь свои счета и прими бой.`;
+  const what = b.mode === 'outcome' ? 'выберет победителей' : 'поставит свои счета';
+  if (b.status === 'pending' && b.role === 'creator') return `Ждём, когда ${name} примет бой и ${what}.`;
+  if (b.status === 'pending') return `${name} вызывает тебя. ${b.mode === 'outcome' ? 'Выбери, кто победит' : 'Поставь свои счета'} и прими бой.`;
   if (b.status === 'active') return b.decided ? `Сыграно ${b.decided} из ${b.total}.` : 'Бой принят. Ждём матчи.';
   if (b.status === 'done') return b.result === 'win' ? 'Ты оказался точнее.' : b.result === 'lose' ? `${name} оказался точнее.` : 'Одинаково точно.';
   if (b.status === 'declined') return b.role === 'creator' ? `${name} отказался от боя.` : 'Ты отказался от этого боя.';
@@ -1440,6 +1490,7 @@ function battleItem(it, m, b, edit) {
   else if (m.status === 'CANCELLED') head = '<span>отменён</span>';
   else head = `<span>${esc(whenShort(m.utcDate))}</span>`;
 
+  if (b.mode === 'outcome') return battleItemOutcome(it, m, b, e, head, finished);
   const cell = (v) => `<b class="num pickv">${v}</b>`;
   const mine = (side) => (e ? miniStep('b', m.id, side, e[side], m[side].short) : cell(it.mine ? it.mine[side] : '—'));
   const t = it.theirs;
@@ -1464,6 +1515,20 @@ function battleItem(it, m, b, edit) {
   </div>`;
 }
 
+function battleItemOutcome(it, m, b, e, head, finished) {
+  const pill = (x) => `<span class="opill${finished && x.pts > 0 ? ' hit' : ''}">${OUT_LABEL[outcomeKey(x)]}</span>`;
+  const pts = (x) => (finished && x && x.pts != null ? `<span class="bpts${x.pts > 0 ? ' hit' : ''} num">+${x.pts}</span>` : '');
+  const mine = e ? outChips('b', m.id, e.pick) : it.mine ? pill(it.mine) : '<span class="muted">—</span>';
+  const t = it.theirs;
+  const theirs = t && t.hidden ? `<span class="olock">${icon('i-lock')}скрыт</span>` : t ? pill(t) : `<span class="muted small">${it.open ? 'ждём' : '—'}</span>`;
+  return `<div class="brow">
+    <div class="brow-head"><span class="league-tag">${esc(league(m))}</span>${head}</div>
+    <div class="bo-teams">${crest(m.home)}<b>${esc(m.home.short)}</b><span class="bo-dash">—</span><b>${esc(m.away.short)}</b>${crest(m.away)}</div>
+    <div class="bo-row"><span class="bo-who">Ты</span><span class="bo-val">${mine}${pts(it.mine)}</span></div>
+    <div class="bo-row"><span class="bo-who">${esc(b.opponent.name)}</span><span class="bo-val">${theirs}${t && !t.hidden ? pts(t) : ''}</span></div>
+  </div>`;
+}
+
 function renderBattle() {
   const sb = state.battle;
   if (!sb) return;
@@ -1473,11 +1538,13 @@ function renderBattle() {
   const me = state.profile ? state.profile.firstName : 'Ты';
   const dirty = b.items.some((it) => {
     const e = edit.get(it.matchId);
-    return e && (!it.mine || it.mine.home !== e.home || it.mine.away !== e.away);
+    if (!e) return false;
+    if (b.mode === 'outcome') return Boolean(e.pick) && (!it.mine || outcomeKey(it.mine) !== e.pick);
+    return !it.mine || it.mine.home !== e.home || it.mine.away !== e.away;
   });
   let save = '';
   if (edit.size && (dirty || b.needsMyPicks)) {
-    const text = b.status === 'pending' && b.role === 'opponent' ? 'Принять бой' : 'Сохранить счета';
+    const text = b.status === 'pending' && b.role === 'opponent' ? 'Принять бой' : b.mode === 'outcome' ? 'Сохранить прогнозы' : 'Сохранить счета';
     save = `<button type="button" class="btn btn-primary" data-bact="save">${icon(b.status === 'pending' ? 'i-swords' : 'i-lock')}${text}</button>`;
   }
   let close = '';
@@ -1493,7 +1560,7 @@ function renderBattle() {
       ${big}
       <p class="bhero-note">${battleNote(b)}</p>
     </div>
-    <p class="hint">${BATTLE_RULE} Счёт друга виден, когда на матч закрывается приём прогнозов.</p>
+    <p class="hint"><b class="mode-tag">${b.mode === 'outcome' ? 'На победу' : 'На точный счёт'}</b> ${BATTLE_RULES[b.mode]} Прогноз друга виден, когда на матч закрывается приём.</p>
     <div class="glass list-card">${b.items.map((it) => (byId.has(it.matchId) ? battleItem(it, byId.get(it.matchId), b, edit) : '')).join('')}</div>
     ${save}${close}`;
 }
@@ -1503,14 +1570,15 @@ async function battleAction(action) {
   if (!sb) return;
   const b = sb.battle;
   if (action === 'save') {
-    const picks = [...sb.edit].map(([matchId, p]) => ({ matchId, home: p.home, away: p.away }));
+    const picks = [...sb.edit].filter(([, p]) => pickReady(b.mode, p)).map(([matchId, p]) => pickBody(b.mode, matchId, p));
+    if (!picks.length) { toast('Выбери исход хотя бы в одном матче'); haptic('error'); return; }
     try {
       const res = await api(`/api/battles/${b.id}/picks`, { method: 'POST', body: { picks } });
       const accepted = b.status === 'pending' && b.role === 'opponent';
       setBattle(res);
       renderBattle();
       haptic('success');
-      toast(accepted ? 'Бой принят' : res.skipped ? 'Сохранено. Часть матчей уже закрылась' : 'Счета сохранены');
+      toast(accepted ? 'Бой принят' : res.skipped ? 'Сохранено. Часть матчей уже закрылась' : 'Сохранено');
       loadBattles();
     } catch (err) {
       haptic('error');

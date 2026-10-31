@@ -263,7 +263,7 @@ test('бои с друзьями: вызов, скрытые прогнозы, �
 
   r = await call(env, '/api/battles', { user: max, method: 'POST', body: { friend: vityaCode, picks: [] } });
   assert.equal(r.status, 400, 'без матчей нельзя');
-  r = await call(env, '/api/battles', { user: max, method: 'POST', body: { friend: vityaCode,
+  r = await call(env, '/api/battles', { user: max, method: 'POST', body: { friend: vityaCode, mode: 'score',
     picks: [{ matchId: 300, home: 2, away: 1 }, { matchId: 301, home: 0, away: 0 }] } });
   assert.equal(r.status, 200);
   const id = r.data.id;
@@ -473,4 +473,28 @@ test('уведомления: вызов на бой, принятие, проч
   await call(env, `/api/battles/${id}/picks`, { user: vitya, method: 'POST', body: { picks: [{ matchId: 600, home: 0, away: 0 }] } });
   r = await call(env, '/api/notifications', { user: max });
   assert.equal(r.data.items[0].kind, 'battle_accepted');
+});
+
+test('бой на победу: по умолчанию, 1 очко за угаданный исход', async () => {
+  const env = makeEnv();
+  await call(env, '/api/me', { user: max });
+  const inHour = new Date(Date.now() + 3600000).toISOString();
+  await upsertMatches(env.DB, [rawMatch(700, inHour), rawMatch(701, inHour)]);
+  let r = await call(env, '/api/auth', { user: max, method: 'POST', body: { accept: true } });
+  const maxCode = r.data.profile.friendCode;
+  r = await call(env, '/api/auth', { user: vitya, method: 'POST', body: { accept: true } });
+  const vityaCode = r.data.profile.friendCode;
+  await call(env, '/api/friends', { user: vitya, method: 'POST', body: { code: maxCode } });
+  r = await call(env, '/api/battles', { user: max, method: 'POST', body: { friend: vityaCode,
+    picks: [{ matchId: 700, home: 3, away: 1 }, { matchId: 701, home: 0, away: 0 }] } });
+  const id = r.data.id;
+  r = await call(env, `/api/battles/${id}`, { user: max });
+  assert.equal(r.data.battle.mode, 'outcome');
+  assert.deepEqual({ h: r.data.battle.items[0].mine.home, a: r.data.battle.items[0].mine.away }, { h: 1, a: 0 }, 'счёт превращается в исход');
+  await call(env, `/api/battles/${id}/picks`, { user: vitya, method: 'POST', body: { picks: [{ matchId: 700, home: 0, away: 1 }, { matchId: 701, home: 0, away: 0 }] } });
+  const past = new Date(Date.now() - 3 * 3600000).toISOString();
+  await env.DB.prepare("UPDATE matches SET status = 'FINISHED', home_score = 2, away_score = 0, utc_date = ?1 WHERE id IN (700, 701)").bind(past).run();
+  r = await call(env, `/api/battles/${id}`, { user: max });
+  assert.deepEqual(r.data.battle.score, { me: 1, them: 0 });
+  assert.equal(r.data.battle.result, 'win');
 });

@@ -18,8 +18,16 @@ function newBattleId() {
   return Array.from(bytes, (b) => ID_ALPHABET[b % ID_ALPHABET.length]).join('');
 }
 
-export function battlePoints(pred, result) {
+// Бой на победу: угадал исход — 1 очко. Счёт храним условно: 1:0, 0:0 или 0:1.
+export const BATTLE_MODES = ['outcome', 'score'];
+const signPick = (p) => {
+  const o = outcomeOf(p.home, p.away);
+  return { ...p, home: o === 'home' ? 1 : 0, away: o === 'away' ? 1 : 0 };
+};
+
+export function battlePoints(pred, result, mode = 'score') {
   if (!pred || !result) return 0;
+  if (mode === 'outcome') return outcomeOf(pred.home, pred.away) === outcomeOf(result.home, result.away) ? BATTLE_POINTS.outcome : 0;
   if (pred.home === result.home && pred.away === result.away) return BATTLE_POINTS.exact;
   if (outcomeOf(pred.home, pred.away) !== outcomeOf(result.home, result.away)) return 0;
   if (pred.home - pred.away === result.home - result.away) return BATTLE_POINTS.diff;
@@ -54,11 +62,13 @@ async function matchRows(db, ids) {
 }
 
 // Создать бой. Создатель сразу ставит свои прогнозы на выбранные матчи.
-export async function createBattle(db, { userId, friendCode, picks, now, lockMs }) {
+export async function createBattle(db, { userId, friendCode, picks, mode = 'outcome', now, lockMs }) {
+  if (!BATTLE_MODES.includes(mode)) return { error: [400, 'bad_mode', 'Неизвестный режим боя'] };
   const friend = await db.prepare('SELECT id, first_name FROM users WHERE friend_code = ?1').bind(String(friendCode || '')).first();
   if (!friend || friend.id === userId) return { error: [404, 'no_friend', 'Друг не найден'] };
   if (!(await areFriends(db, userId, friend.id))) return { error: [403, 'not_friend', 'Бой можно начать только с другом'] };
-  const clean = cleanPicks(picks);
+  let clean = cleanPicks(picks);
+  if (clean && mode === 'outcome') clean = clean.map(signPick);
   if (!clean || clean.length < BATTLE.minMatches) return { error: [400, 'bad_picks', 'Выбери хотя бы один матч'] };
   if (clean.length > BATTLE.maxMatches) return { error: [400, 'too_many_matches', `В бою максимум ${BATTLE.maxMatches} матчей`] };
   const rows = await matchRows(db, clean.map((p) => p.matchId));
@@ -73,8 +83,8 @@ export async function createBattle(db, { userId, friendCode, picks, now, lockMs 
   const id = newBattleId();
   const at = nowIso(now);
   await db.batch([
-    db.prepare("INSERT INTO battles (id, creator_id, opponent_id, status, created_at) VALUES (?1, ?2, ?3, 'pending', ?4)")
-      .bind(id, userId, friend.id, at),
+    db.prepare("INSERT INTO battles (id, creator_id, opponent_id, status, created_at, mode) VALUES (?1, ?2, ?3, 'pending', ?4, ?5)")
+      .bind(id, userId, friend.id, at, mode),
     ...clean.map((p) => db.prepare('INSERT INTO battle_matches (battle_id, match_id) VALUES (?1, ?2)').bind(id, p.matchId)),
     ...clean.map((p) => db.prepare(`INSERT INTO battle_picks (battle_id, user_id, match_id, home, away, updated_at)
       VALUES (?1, ?2, ?3, ?4, ?5, ?6)`).bind(id, userId, p.matchId, p.home, p.away, at))
@@ -95,7 +105,8 @@ export async function savePicks(db, { battleId, userId, picks, now, lockMs }) {
   const b = await battleRow(db, battleId, userId);
   if (!b) return { error: [404, 'no_battle', 'Бой не найден'] };
   if (!['pending', 'active'].includes(b.status)) return { error: [409, 'closed', 'Этот бой уже закрыт'] };
-  const clean = cleanPicks(picks);
+  let clean = cleanPicks(picks);
+  if (clean && b.mode === 'outcome') clean = clean.map(signPick);
   if (!clean || !clean.length) return { error: [400, 'bad_picks', 'Поставь счёт хотя бы на один матч'] };
   const { results: inBattle } = await db.prepare('SELECT match_id FROM battle_matches WHERE battle_id = ?1').bind(battleId).all();
   const allowed = new Set(inBattle.map((r) => r.match_id));
@@ -139,8 +150,8 @@ function summarize(b, matches, picks, userId, now, lockMs) {
     const theirs = byUser(otherId, m.id);
     const open = isOpen(m, now, lockMs);
     const finished = m.status === 'FINISHED' && score;
-    const myPts = finished && mine ? battlePoints(mine, score) : null;
-    const theirPts = finished && theirs ? battlePoints(theirs, score) : null;
+    const myPts = finished && mine ? battlePoints(mine, score, b.mode) : null;
+    const theirPts = finished && theirs ? battlePoints(theirs, score, b.mode) : null;
     if (finished) { decided += 1; my += myPts || 0; their += theirPts || 0; }
     return {
       matchId: m.id,
@@ -160,6 +171,7 @@ function summarize(b, matches, picks, userId, now, lockMs) {
   return {
     id: b.id,
     status,
+    mode: b.mode || 'score',
     role: meIsCreator ? 'creator' : 'opponent',
     opponent: { name: (meIsCreator ? b.opponent_name : b.creator_name) || 'Друг' },
     createdAt: b.created_at,
