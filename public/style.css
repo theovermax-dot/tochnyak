@@ -694,3 +694,14 @@ button, a, [role="button"] { touch-action: manipulation; }
 
 .story-prev { display: block; width: min(62%, 240px); margin: 0 auto; border-radius: 18px; box-shadow: 0 16px 40px rgba(0,0,0,.5); -webkit-touch-callout: default; -webkit-user-select: auto; user-select: auto; }
 .story-steps { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; font-size: 14px; font-weight: 600; color: var(--muted); line-height: 1.4; }
+
+/* Новый бой на победу: исход прямо в строке */
+.prow-out { cursor: default; padding: 10px 12px 10px 14px; }
+.prow-meta { font-size: 11px; font-weight: 700; color: var(--faint); margin-bottom: -2px; }
+.prow-out .prow-teams { gap: 6px; }
+.prow-out .prow-team { height: 26px; }
+.prow-out .prow-team .crest { width: 24px; height: 24px; }
+.prow-out .ochips button { min-width: 42px; height: 40px; font-size: 14px; }
+.prow-out.on { background: rgba(197, 3, 55, 0.12); }
+#bn-list { padding-bottom: 76px; }
+#bn-count { font-family: 'Manrope', sans-serif; font-size: 13px; }

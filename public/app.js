@@ -360,6 +360,8 @@ document.addEventListener('click', (e) => {
   if (legal) { e.preventDefault(); openLegal(legal.dataset.legal); return; }
   if (t.closest('[data-econ]')) { openEcon(); return; }
   if (t.closest('[data-add-friend]')) { openAddFriend(); return; }
+  const dpick = t.closest('[data-dpick]');
+  if (dpick) { draftPick(dpick.dataset.dpick); return; }
   const och = t.closest('[data-och]');
   if (och) { chooseOut(och.dataset.och); return; }
   const bmode = t.closest('[data-bmode]');
@@ -1503,7 +1505,7 @@ function showIncomingBattle() {
 // ---------- Бои с друзьями ----------
 // Двое ставят свои счета на одни и те же матчи. На интерес: аура и монеты за бой не начисляются.
 
-const BATTLE_MAX = 10;
+const BATTLE_MAX = 30;
 const BATTLE_RULES = {
   outcome: 'Угадал победителя или ничью — 1 очко. На интерес: аура и монеты не начисляются.',
   score: 'Точный счёт 3 · разница 2 · исход 1. На интерес: аура и монеты не начисляются.'
@@ -1628,6 +1630,19 @@ function toggleDraft(id) {
 
 function draftRow(m, p, mode) {
   const time = `<span class="prow-time"><b class="num">${timeFmt.format(new Date(m.utcDate))}</b><span>${esc(LEAGUE_SHORT[m.competition] || league(m))}</span></span>`;
+  // На победу: П1 / Х / П2 видны сразу, одно касание выбирает матч и исход, повторное — снимает.
+  if (mode === 'outcome') {
+    const pick = p ? p.pick : null;
+    return `<div class="prow prow-out${pick ? ' on' : ''}">
+      <span class="prow-teams">
+        <span class="prow-meta num">${timeFmt.format(new Date(m.utcDate))} · ${esc(LEAGUE_SHORT[m.competition] || league(m))}</span>
+        <span class="prow-team">${crest(m.home)}<b>${esc(m.home.short)}</b></span>
+        <span class="prow-team">${crest(m.away)}<b>${esc(m.away.short)}</b></span>
+      </span>
+      <span class="ochips" role="group" aria-label="Исход">${['home', 'draw', 'away'].map((k) =>
+        `<button type="button" data-dpick="${m.id}:${k}" aria-pressed="${pick === k}">${OUT_LABEL[k]}</button>`).join('')}</span>
+    </div>`;
+  }
   const team = (side) => `<span class="prow-team">${crest(m[side])}<b>${esc(m[side].short)}</b>${p && mode === 'score' ? miniStep('d', m.id, side, p[side], m[side].short) : ''}</span>`;
   return `<div class="prow${p ? ' on' : ''}"${p ? '' : ` data-draft="${m.id}" role="button" tabindex="0" aria-label="${esc(`Добавить ${m.home.short} — ${m.away.short}`)}"`}>
     <button type="button" class="prow-tick" data-draft="${m.id}" aria-pressed="${Boolean(p)}" aria-label="${p ? 'Убрать матч' : 'Добавить матч'}">${icon('i-check')}</button>
@@ -1648,12 +1663,12 @@ function renderDraft() {
     <button type="button" role="tab" data-bmode="outcome" aria-selected="${d.mode === 'outcome'}">На победу</button>
     <button type="button" role="tab" data-bmode="score" aria-selected="${d.mode === 'score'}">На точный счёт</button>
   </div>
-  <p class="hint">Отметь до ${BATTLE_MAX} матчей и ${d.mode === 'outcome' ? 'выбери, кто победит' : 'поставь точный счёт'}. ${esc(d.name)} сделает свои прогнозы, а после матчей посмотрим, кто точнее. ${BATTLE_RULES[d.mode]}</p>`;
+  <p class="hint">${d.mode === 'outcome' ? 'Жми П1, Х или П2 у любых матчей и кидай вызов.' : 'Нажми на матч и поставь счёт.'} ${esc(d.name)} сделает свои прогнозы, после матчей посмотрим, кто точнее. ${BATTLE_RULES[d.mode]}</p>`;
   const n = d.picks.size;
   const missing = [...d.picks.values()].filter((p) => !pickReady(d.mode, p)).length;
-  $('bn-count').textContent = `${n} из ${BATTLE_MAX}`;
+  $('bn-count').textContent = n ? `Выбрано ${n}` : 'Выбери матчи';
   $('bn-send').disabled = !n || missing > 0;
-  $('bn-send').innerHTML = !n ? 'Выбери матчи'
+  $('bn-send').innerHTML = !n ? (d.mode === 'outcome' ? 'Нажми П1, Х или П2 у матча' : 'Выбери матчи')
     : missing ? `Выбери исход ещё в ${missing} ${plural(missing, ['матче', 'матчах', 'матчах'])}`
       : `${icon('i-swords')}Бросить вызов · <span class="num">${n}</span>`;
   if (!state.matches.length) return;
@@ -1672,6 +1687,19 @@ function renderDraft() {
     <h3 class="day-head"><span>${esc(g.label)}</span><span class="day-count">МСК</span></h3>
     <div class="glass list-card">${g.items.map((m) => draftRow(m, d.picks.get(m.id), d.mode)).join('')}</div>
   </section>`).join('');
+}
+
+function draftPick(spec) {
+  const d = state.draft;
+  if (!d) return;
+  const [idStr, key] = spec.split(':');
+  const id = Number(idStr);
+  const cur = d.picks.get(id);
+  if (cur && cur.pick === key) d.picks.delete(id);
+  else if (!cur && d.picks.size >= BATTLE_MAX) { toast(`В бою максимум ${BATTLE_MAX} матчей`); haptic('error'); return; }
+  else d.picks.set(id, { pick: key });
+  haptic('select');
+  renderDraft();
 }
 
 function setDraftMode(mode) {

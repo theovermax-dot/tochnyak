@@ -7,7 +7,7 @@
 import { outcomeOf } from './scoring.js';
 import { nowIso } from './db.js';
 
-export const BATTLE = { minMatches: 1, maxMatches: 10, maxOpen: 20 };
+export const BATTLE = { minMatches: 1, maxMatches: 30, maxOpen: 20 };
 export const BATTLE_POINTS = { exact: 3, diff: 2, outcome: 1 };
 
 const ID_ALPHABET = 'abcdefghjkmnpqrstuvwxyz23456789';
