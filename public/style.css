@@ -211,7 +211,10 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--crimson-hi); ou
 .strip b { font-size: 22px; font-weight: 800; }
 .strip span span { font-size: 12px; color: var(--muted); font-weight: 600; }
 .strip-flat { padding: 4px 0 0; border: none; background: none; }
-.strip-flat b { font-size: 20px; }
+.strip-flat b { font-size: 20px; white-space: nowrap; }
+.strip-flat b small { font-size: 13px; font-weight: 700; color: var(--muted); }
+.strip-flat > span { padding: 0 6px; }
+.strip-flat > span > span { text-align: center; line-height: 1.25; }
 
 .segmented { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; padding: 4px; border-radius: 16px; }
 .segmented button { height: 38px; border: none; border-radius: 12px; background: transparent; color: var(--muted); font-weight: 700; font-size: 14px; }

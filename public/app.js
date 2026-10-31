@@ -1361,18 +1361,6 @@ async function loadProfile() {
   } catch { /* покажем то, что уже есть */ }
 }
 
-// Общая статистика: сколько прогнозов угадано из сыгранных.
-function hitsHtml(p) {
-  const total = p.settledPredictions || 0;
-  const hits = p.hits || 0;
-  const share = total ? Math.round((hits / total) * 100) : 0;
-  return `<div class="glass hits-card">
-    <div class="hits-top"><span>Угадано</span><b class="num">${hits}<span> из ${total}</span></b></div>
-    <span class="hits-bar" aria-hidden="true"><i style="width:${share}%"></i></span>
-    <span class="hits-note">${total ? `${share}% сыгранных прогнозов принесли ауру` : 'Статистика появится после первых сыгранных матчей'}</span>
-  </div>`;
-}
-
 function renderProfile() {
   const p = state.profile;
   if (!p) return;
@@ -1387,12 +1375,11 @@ function renderProfile() {
       <button type="button" class="profile-wallet" data-econ aria-label="Что такое монеты и аура"><span class="stat-chip"><span class="coin" aria-hidden="true"></span><span class="num">${p.coins || 0}</span></span>
       <span class="stat-chip"><svg class="ic ic-aura" aria-hidden="true"><use href="#i-target"/></svg><span class="num">${p.aura}</span></span><svg class="ic ic-info" aria-hidden="true"><use href="#i-info"/></svg></button></div>
     <div class="strip strip-flat">
-      <span><b class="num">${p.weekAura}</b><span>за неделю</span></span>
-      <span><b class="num">${p.exactHits}</b><span>точняков</span></span>
-      <span><b class="num">${p.streak || 0}</b><span>подряд</span></span>
+      <span><b class="num">${p.weekRank || '—'}</b><span>место за неделю</span></span>
+      <span><b class="num">${p.hits || 0}<small> из ${p.settledPredictions || 0}</small></b><span>матчей угадано</span></span>
+      <span><b class="num">${p.exactHits}</b><span>${plural(p.exactHits, ['точный счёт', 'точных счёта', 'точных счетов'])}</span></span>
     </div>
-  </div>
-  ${hitsHtml(p)}`;
+  </div>`;
   if (html === state.profileHtml && $('profile-card').firstChild) return;
   state.profileHtml = html;
   $('profile-card').innerHTML = html;

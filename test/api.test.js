@@ -100,6 +100,7 @@ test('полный круг: прогноз, закрытие, финал, ау�
   assert.equal(r.data.profile.hits, 1);
   assert.equal(r.data.profile.settledPredictions, 1);
   assert.equal(r.data.profile.leagues, undefined, 'точность по лигам убрана');
+  assert.equal(r.data.profile.weekRank, 1, 'единственный с аурой за неделю — первый');
 
   r = await call(env, '/api/leaderboard?period=week', { user: vitya });
   assert.equal(r.data.rows.length, 1);

@@ -274,6 +274,15 @@ async function loadProfile(db, userId, now) {
      ORDER BY p.settled_at DESC, p.match_id DESC LIMIT 500`
   ).bind(userId).all();
   const stats = profileStats(settled);
+  // Место в рейтинге недели: сколько игроков набрали больше. Без очков за неделю места нет.
+  let weekRank = null;
+  if (week.pts > 0) {
+    const above = await db.prepare(
+      `SELECT COUNT(*) AS n FROM (SELECT user_id, SUM(points) AS pts FROM predictions
+       WHERE settled_at >= ?1 GROUP BY user_id HAVING pts > ?2)`
+    ).bind(weekStart, week.pts).first();
+    weekRank = above.n + 1;
+  }
   return {
     id: user.id,
     firstName: user.first_name,
@@ -284,6 +293,7 @@ async function loadProfile(db, userId, now) {
     coins: user.coins || 0,
     character: skinById(user.character) ? user.character : DEFAULT_CHARACTER,
     weekAura: week.pts,
+    weekRank,
     settledPredictions: stats.total,
     hits: stats.hits,
     exactHits: stats.exact,
