@@ -24,3 +24,13 @@ test('если нет сокращения, берутся первые букв
   assert.equal(m.homeTla, 'GOA');
   assert.equal(m.awayTla, 'AJA');
 });
+
+test('названия клубов: вместо сленга полные', async () => {
+  const { teamName } = await import('../src/teams.js');
+  assert.equal(teamName('Atleti', 'Club Atlético de Madrid'), 'Atlético Madrid');
+  assert.equal(teamName('Barça', 'FC Barcelona'), 'Barcelona');
+  assert.equal(teamName('Man United', 'Manchester United FC'), 'Manchester United');
+  assert.equal(teamName('Spurs', 'Tottenham Hotspur FC'), 'Tottenham');
+  assert.equal(teamName('Real Madrid', 'Real Madrid CF'), 'Real Madrid');
+  assert.equal(teamName('', 'Arsenal FC'), 'Arsenal');
+});

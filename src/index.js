@@ -6,6 +6,7 @@ import { validateInitData, botApi } from './telegram.js';
 import { syncAndSettle } from './footballData.js';
 import { COINS } from './scoring.js';
 import { CHARACTERS, DEFAULT_CHARACTER, characterById } from './characters.js';
+import { teamName } from './teams.js';
 import { BATTLE_ID, createBattle, savePicks, closeBattle, listBattles, getBattle, deleteUserBattles } from './battles.js';
 
 const MAX_GOALS = 15;
@@ -127,8 +128,8 @@ function matchOut(m, env, now) {
     lockAt,
     open: now < Date.parse(lockAt) && ['SCHEDULED', 'TIMED'].includes(m.status),
     status: m.status,
-    home: { name: m.home_name, short: m.home_short, tla: m.home_tla, crest: crestUrl(m.home_crest) },
-    away: { name: m.away_name, short: m.away_short, tla: m.away_tla, crest: crestUrl(m.away_crest) },
+    home: { name: m.home_name, short: teamName(m.home_short, m.home_name), tla: m.home_tla, crest: crestUrl(m.home_crest) },
+    away: { name: m.away_name, short: teamName(m.away_short, m.away_name), tla: m.away_tla, crest: crestUrl(m.away_crest) },
     score: m.home_score == null ? null : { home: m.home_score, away: m.away_score },
     prediction: m.pred_home == null ? null : { home: m.pred_home, away: m.pred_away, points: m.pred_points, kind: m.pred_kind || 'score' }
   };
