@@ -5,7 +5,7 @@ import { ensureSchema, nowIso, newFriendCode } from './db.js';
 import { validateInitData, botApi } from './telegram.js';
 import { syncAndSettle } from './footballData.js';
 import { COINS } from './scoring.js';
-import { CHARACTERS, DEFAULT_CHARACTER, characterById } from './characters.js';
+import { CHARACTERS, DEFAULT_CHARACTER, skinById, baseSkinOf } from './characters.js';
 import { teamName } from './teams.js';
 import { profileStats } from './stats.js';
 import { weekStartIso } from './week.js';
@@ -141,21 +141,36 @@ function matchOut(m, env, now) {
   };
 }
 
+// Купленные образы. В owned_characters хранится id образа (у персонажа — id его первого образа).
 async function ownedSet(db, userId) {
   const { results } = await db.prepare('SELECT character_id FROM owned_characters WHERE user_id = ?1').bind(userId).all();
   const set = new Set(results.map((r) => r.character_id));
-  for (const c of CHARACTERS) if (c.price === 0) set.add(c.id);
+  for (const c of CHARACTERS) for (const s of c.skins) if (s.price === 0) set.add(s.id);
   return set;
 }
 
 async function shopState(db, userId) {
   const user = await db.prepare('SELECT coins, character FROM users WHERE id = ?1').bind(userId).first();
   const owned = await ownedSet(db, userId);
-  const selected = characterById(user.character) ? user.character : DEFAULT_CHARACTER;
+  const selected = skinById(user.character) ? user.character : DEFAULT_CHARACTER;
   return {
     coins: user.coins || 0,
     selected,
-    items: CHARACTERS.map((c) => ({ ...c, owned: owned.has(c.id), selected: c.id === selected }))
+    characters: CHARACTERS.map((c) => {
+      const has = owned.has(c.skins[0].id);
+      return {
+        id: c.id,
+        name: c.name,
+        price: c.price,
+        owned: has,
+        skins: c.skins.map((s) => ({
+          id: s.id, tier: s.tier, name: s.name, rarity: s.rarity, frames: s.frames, price: s.price,
+          owned: owned.has(s.id), selected: s.id === selected,
+          // Образы 2–4 открываются только после покупки персонажа.
+          needsCharacter: s.tier > 1 && !has
+        }))
+      };
+    })
   };
 }
 
@@ -253,7 +268,7 @@ async function loadProfile(db, userId, now) {
     'SELECT COALESCE(SUM(points), 0) AS pts, COUNT(*) AS n FROM predictions WHERE user_id = ?1 AND settled_at >= ?2'
   ).bind(userId, weekStart).first();
   const { results: settled } = await db.prepare(
-    `SELECT m.competition, p.points, p.kind, p.home, p.away, m.home_score AS hs, m.away_score AS ast
+    `SELECT p.points, p.kind, p.home, p.away, m.home_score AS hs, m.away_score AS ast
      FROM predictions p JOIN matches m ON m.id = p.match_id
      WHERE p.user_id = ?1 AND p.settled_at IS NOT NULL
      ORDER BY p.settled_at DESC, p.match_id DESC LIMIT 500`
@@ -267,12 +282,12 @@ async function loadProfile(db, userId, now) {
     hasPhone: Boolean(user.phone),
     aura: user.aura,
     coins: user.coins || 0,
-    character: characterById(user.character) ? user.character : DEFAULT_CHARACTER,
+    character: skinById(user.character) ? user.character : DEFAULT_CHARACTER,
     weekAura: week.pts,
     settledPredictions: stats.total,
+    hits: stats.hits,
     exactHits: stats.exact,
     streak: stats.streak,
-    leagues: stats.leagues,
     joinedAt: user.created_at,
     friendCode: await ensureFriendCode(db, userId),
     friendsCount: (await db.prepare('SELECT COUNT(*) AS n FROM friends WHERE user_id = ?1').bind(userId).first()).n,
@@ -366,10 +381,13 @@ async function handleApi(request, env, url, now, ctx) {
 
   if (path === '/api/shop/buy' && method === 'POST') {
     const body = await request.json().catch(() => ({}));
-    const ch = characterById(body.id);
-    if (!ch) return error(404, 'no_character', 'Такого персонажа нет');
+    const ch = skinById(body.id);
+    if (!ch) return error(404, 'no_character', 'Такого образа нет');
     const owned = await ownedSet(db, tgUser.id);
     if (owned.has(ch.id)) return json(await shopState(db, tgUser.id));
+    if (ch.tier > 1 && !owned.has(baseSkinOf(ch.character))) {
+      return error(403, 'need_character', `Сначала купи персонажа ${ch.characterName}`);
+    }
     // Сначала «бронируем» персонажа: повторный запрос не спишет монеты дважды.
     const claim = await db.prepare(`INSERT OR IGNORE INTO owned_characters (user_id, character_id, bought_at, price)
       VALUES (?1, ?2, ?3, ?4)`).bind(tgUser.id, ch.id, nowIso(now), ch.price).run();
@@ -385,10 +403,10 @@ async function handleApi(request, env, url, now, ctx) {
 
   if (path === '/api/shop/select' && method === 'POST') {
     const body = await request.json().catch(() => ({}));
-    const ch = characterById(body.id);
-    if (!ch) return error(404, 'no_character', 'Такого персонажа нет');
+    const ch = skinById(body.id);
+    if (!ch) return error(404, 'no_character', 'Такого образа нет');
     const owned = await ownedSet(db, tgUser.id);
-    if (!owned.has(ch.id)) return error(403, 'not_owned', 'Сначала купи этого персонажа');
+    if (!owned.has(ch.id)) return error(403, 'not_owned', 'Сначала купи этот образ');
     await db.prepare('UPDATE users SET character = ?1 WHERE id = ?2').bind(ch.id, tgUser.id).run();
     return json(await shopState(db, tgUser.id));
   }
@@ -405,7 +423,7 @@ async function handleApi(request, env, url, now, ctx) {
     if (res.error) return error(...res.error);
     await addNotice(db, res.opponentId, 'battle_invite', `${tgUser.firstName || 'Друг'} бросает тебе вызов на бой · ${body.picks.length} ${ruPlural(body.picks.length, ['матч', 'матча', 'матчей'])}`, `#battle-${res.id}`, now);
     later(ctx, () => notify(env, res.opponentId,
-      `⚔️ <b>${escHtml(tgUser.firstName || 'Друг')} бросает тебе вызов на бой</b>\n\nМатчей в бою: ${body.picks.length}, ${mode === 'outcome' ? 'ставим на победу' : 'ставим точный счёт'}. Делай прогнозы, пока матчи не начались. Победит тот, кто окажется точнее.`,
+      `⚔️ <b>${escHtml(tgUser.firstName || 'Друг')} бросает тебе вызов на бой</b>\n\nМатчей в бою: ${body.picks.length}, ${mode === 'outcome' ? 'угадываем победителя' : 'угадываем точный счёт'}. Делай прогнозы, пока матчи не начались. Победит тот, кто окажется точнее.`,
       'Принять бой', `${url.origin}/#battle-${res.id}`));
     return json({ id: res.id });
   }
@@ -470,6 +488,11 @@ async function handleApi(request, env, url, now, ctx) {
   }
   if (path === '/api/notifications/read' && method === 'POST') {
     await db.prepare('UPDATE notifications SET read_at = ?1 WHERE user_id = ?2 AND read_at IS NULL').bind(nowIso(now), tgUser.id).run();
+    return json({ ok: true });
+  }
+
+  if (path === '/api/notifications/clear' && method === 'POST') {
+    await db.prepare('DELETE FROM notifications WHERE user_id = ?1').bind(tgUser.id).run();
     return json({ ok: true });
   }
 

@@ -122,10 +122,61 @@ export async function weeklyWrapUp(env, { now = Date.now(), appUrl, send = botAp
   return { players: rows.length, winners: winners.map((w) => w.id), sent };
 }
 
+// ---------- Топ-матч дня: раз в день в 10:00 по Москве ----------
+
+const MSK = 3 * 3600000;
+const LEAGUE_WEIGHT = { CL: 100, PL: 90, PD: 85, SA: 75, BL1: 72, FL1: 62, DED: 55 };
+const LEAGUE_NAME = { CL: 'Лига чемпионов', PL: 'АПЛ', PD: 'Ла Лига', SA: 'Серия А', BL1: 'Бундеслига', FL1: 'Лига 1', DED: 'Эредивизи' };
+const BIG_CLUB = /Real Madrid|Barcelona|Atl[ée]tico|Manchester City|Manchester United|Arsenal|Liverpool|Chelsea|Tottenham|Newcastle|Bayern|Dortmund|Leverkusen|Internazionale|Milan|Juventus|Napoli|Roma|Paris Saint|Marseille|Ajax|PSV|Feyenoord|Benfica|Porto|Sporting/i;
+
+// Чем громче матч, тем больше балл: лига + большие клубы, а встреча двух грандов — особенно.
+export function topMatchScore(m) {
+  const big = [m.home_name, m.away_name].filter((n) => BIG_CLUB.test(n || '')).length;
+  return (LEAGUE_WEIGHT[m.competition] || 40) + big * 30 + (big === 2 ? 40 : 0);
+}
+
+const mskDay = (ms) => new Date(ms + MSK).toISOString().slice(0, 10);
+const mskTime = (iso) => new Date(Date.parse(iso) + MSK).toISOString().slice(11, 16);
+
+export async function dailyTopMatch(env, { now = Date.now(), lockMs = 5 * MIN, appUrl, send = botApi } = {}) {
+  const hour = new Date(now + MSK).getUTCHours();
+  if (hour !== 10) return null;
+  const db = env.DB;
+  const day = mskDay(now);
+  const dayStart = Date.parse(`${day}T00:00:00Z`) - MSK;
+  const { results: matches } = await db.prepare(
+    `SELECT id, competition, utc_date, home_short, home_name, away_short, away_name FROM matches
+     WHERE utc_date > ?1 AND utc_date < ?2 AND status IN ('SCHEDULED', 'TIMED')`
+  ).bind(new Date(now + lockMs).toISOString(), new Date(dayStart + DAY).toISOString()).all();
+  if (!matches.length) return null;
+  // Один раз в день, даже если расписание сработает дважды.
+  const claim = await db.prepare('INSERT INTO meta (key, value) VALUES (?1, ?2) ON CONFLICT(key) DO NOTHING')
+    .bind(`top_day:${day}`, JSON.stringify({ at: nowIso(now) })).run();
+  if (!claim.meta || !claim.meta.changes) return null;
+
+  const top = matches.slice().sort((a, b) => topMatchScore(b) - topMatchScore(a) || a.utc_date.localeCompare(b.utc_date) || a.id - b.id)[0];
+  if (!env.BOT_TOKEN || !appUrl) return { match: top.id, sent: 0 };
+  // Игрокам, кто заходил последние 30 дней и ещё не сделал прогноз на этот матч.
+  const { results: users } = await db.prepare(
+    `SELECT u.id FROM users u WHERE u.notify = 1 AND u.last_seen_at >= ?1
+       AND NOT EXISTS (SELECT 1 FROM predictions p WHERE p.user_id = u.id AND p.match_id = ?2)
+     ORDER BY u.last_seen_at DESC LIMIT ${MAX_MESSAGES}`
+  ).bind(nowIso(now - 30 * DAY), top.id).all();
+  const home = esc(teamName(top.home_short, top.home_name));
+  const away = esc(teamName(top.away_short, top.away_name));
+  const text = `🔥 <b>Топ-матч дня</b>\n\n<b>${home} — ${away}</b>\n${esc(LEAGUE_NAME[top.competition] || '')} · сегодня в ${mskTime(top.utc_date)} МСК\n\nКто победит? Прогноз принимается до начала матча.\n\nОтключить сообщения: /mute`;
+  let sent = 0;
+  for (const u of users) {
+    if (await deliver(env, send, u.id, { text, reply_markup: button(`${appUrl}/#match-${top.id}`, 'Сделать прогноз') })) sent += 1;
+  }
+  return { match: top.id, sent };
+}
+
 export async function runBotJobs(env, now = Date.now()) {
   const appUrl = env.APP_URL || null;
   const lockMs = Number(env.LOCK_MINUTES || 5) * MIN;
   const out = {};
+  try { out.top = await dailyTopMatch(env, { now, lockMs, appUrl }); } catch (err) { console.error('top', err); }
   try { out.reminders = await sendReminders(env, { now, lockMs, appUrl }); } catch (err) { console.error('reminders', err); }
   try { out.week = await weeklyWrapUp(env, { now, appUrl: appUrl && `${appUrl}/#rating` }); } catch (err) { console.error('week', err); }
   return out;

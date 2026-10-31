@@ -97,6 +97,9 @@ test('полный круг: прогноз, закрытие, финал, ау�
   assert.equal(r.data.profile.coins, 5, 'за точный счёт 5 монет');
   assert.equal(r.data.profile.weekAura, 12);
   assert.equal(r.data.profile.exactHits, 1);
+  assert.equal(r.data.profile.hits, 1);
+  assert.equal(r.data.profile.settledPredictions, 1);
+  assert.equal(r.data.profile.leagues, undefined, 'точность по лигам убрана');
 
   r = await call(env, '/api/leaderboard?period=week', { user: vitya });
   assert.equal(r.data.rows.length, 1);
@@ -216,32 +219,49 @@ test('приглашение: подпись, готовое сообщение 
   assert.match(html, new RegExp(`start=f_${code}`));
 });
 
-test('магазин: покупка за монеты, нехватка, выбор', async () => {
-  const chars = await import('../src/characters.js');
-  chars.CHARACTERS.push({ id: 'test-hero', name: 'Тест', price: 30, rarity: 'Редкий' });
-  try {
-    const env = makeEnv();
-    await call(env, '/api/auth', { user: max, method: 'POST', body: { accept: true } });
-    let r = await call(env, '/api/shop', { user: max });
-    assert.equal(r.data.selected, 'tochnyak');
-    assert.equal(r.data.items.find((i) => i.id === 'tochnyak').owned, true);
-    r = await call(env, '/api/shop/buy', { user: max, method: 'POST', body: { id: 'test-hero' } });
-    assert.equal(r.status, 409, 'монет нет');
-    r = await call(env, '/api/shop/select', { user: max, method: 'POST', body: { id: 'test-hero' } });
-    assert.equal(r.status, 403);
-    env.DB.db.exec('UPDATE users SET coins = 40 WHERE id = 1');
-    r = await call(env, '/api/shop/buy', { user: max, method: 'POST', body: { id: 'test-hero' } });
-    assert.equal(r.data.coins, 10);
-    assert.equal(r.data.selected, 'test-hero');
-    r = await call(env, '/api/shop/buy', { user: max, method: 'POST', body: { id: 'test-hero' } });
-    assert.equal(r.data.coins, 10, 'второй раз не списывает');
-    r = await call(env, '/api/shop/select', { user: max, method: 'POST', body: { id: 'tochnyak' } });
-    assert.equal(r.data.selected, 'tochnyak');
-    r = await call(env, '/api/me', { user: max });
-    assert.equal(r.data.profile.character, 'tochnyak');
-  } finally {
-    chars.CHARACTERS.pop();
-  }
+test('магазин: персонаж за 50, образы только после персонажа, нехватка, надеть', async () => {
+  const env = makeEnv();
+  await call(env, '/api/auth', { user: max, method: 'POST', body: { accept: true } });
+  let r = await call(env, '/api/shop', { user: max });
+  assert.equal(r.data.selected, 'tochnyak');
+  assert.deepEqual(r.data.characters.map((c) => c.id), ['tochnyak', 'betty', 'luder', 'farter']);
+  const betty = r.data.characters.find((c) => c.id === 'betty');
+  assert.equal(betty.price, 50);
+  assert.deepEqual(betty.skins.map((s) => s.price), [50, 30, 70, 150]);
+  assert.equal(betty.owned, false);
+  assert.equal(betty.skins[1].needsCharacter, true);
+  assert.equal(r.data.characters[0].skins[0].owned, true, 'Точняк бесплатный');
+
+  r = await call(env, '/api/shop/buy', { user: max, method: 'POST', body: { id: 'betty_1' } });
+  assert.equal(r.status, 409, 'монет нет');
+  env.DB.db.exec('UPDATE users SET coins = 100 WHERE id = 1');
+  r = await call(env, '/api/shop/buy', { user: max, method: 'POST', body: { id: 'betty_2' } });
+  assert.equal(r.status, 403, 'образ без персонажа не продаётся');
+  assert.equal(r.data.error, 'need_character');
+  r = await call(env, '/api/shop/select', { user: max, method: 'POST', body: { id: 'betty_1' } });
+  assert.equal(r.status, 403, 'нельзя надеть некупленное');
+
+  r = await call(env, '/api/shop/buy', { user: max, method: 'POST', body: { id: 'betty_1' } });
+  assert.equal(r.data.coins, 50);
+  assert.equal(r.data.selected, 'betty_1', 'купленный персонаж сразу надет');
+  assert.equal(r.data.characters.find((c) => c.id === 'betty').owned, true);
+  r = await call(env, '/api/shop/buy', { user: max, method: 'POST', body: { id: 'betty_1' } });
+  assert.equal(r.data.coins, 50, 'второй раз не списывает');
+
+  r = await call(env, '/api/shop/buy', { user: max, method: 'POST', body: { id: 'betty_3' } });
+  assert.equal(r.status, 409, 'на 70 не хватает');
+  r = await call(env, '/api/shop/buy', { user: max, method: 'POST', body: { id: 'betty_2' } });
+  assert.equal(r.data.coins, 20);
+  assert.equal(r.data.selected, 'betty_2');
+  r = await call(env, '/api/shop/buy', { user: max, method: 'POST', body: { id: 'luder_9' } });
+  assert.equal(r.status, 404);
+
+  r = await call(env, '/api/shop/select', { user: max, method: 'POST', body: { id: 'tochnyak' } });
+  assert.equal(r.data.selected, 'tochnyak');
+  r = await call(env, '/api/shop/select', { user: max, method: 'POST', body: { id: 'betty_1' } });
+  assert.equal(r.data.selected, 'betty_1');
+  r = await call(env, '/api/me', { user: max });
+  assert.equal(r.data.profile.character, 'betty_1');
 });
 
 test('бои с друзьями: вызов, скрытые прогнозы, принятие, итог без ауры и монет', async () => {
@@ -473,6 +493,15 @@ test('уведомления: вызов на бой, принятие, проч
   await call(env, `/api/battles/${id}/picks`, { user: vitya, method: 'POST', body: { picks: [{ matchId: 600, home: 0, away: 0 }] } });
   r = await call(env, '/api/notifications', { user: max });
   assert.equal(r.data.items[0].kind, 'battle_accepted');
+
+  // Очистить: удаляются только свои уведомления.
+  await call(env, '/api/notifications/clear', { user: max, method: 'POST' });
+  r = await call(env, '/api/notifications', { user: max });
+  assert.equal(r.data.items.length, 0);
+  r = await call(env, '/api/me', { user: max });
+  assert.equal(r.data.profile.unread, 0);
+  r = await call(env, '/api/notifications', { user: vitya });
+  assert.ok(r.data.items.length > 0, 'у друга уведомления на месте');
 });
 
 test('бой на победу: по умолчанию, 1 очко за угаданный исход', async () => {

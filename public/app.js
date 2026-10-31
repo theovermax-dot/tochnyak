@@ -22,7 +22,8 @@ const state = {
   fperiod: 'week',
   mytab: 'wait',
   shop: null,
-  shopPick: null,
+  shopSkin: null,
+  shopChar: null,
   view: 'matches',
   sheet: null,
   friendLink: null,
@@ -125,7 +126,9 @@ function setupTelegram() {
     if (tg.setBottomBarColor) tg.setBottomBarColor('#02060E');
     if (tg.disableVerticalSwipes) tg.disableVerticalSwipes();
     // Полный экран везде, где Telegram это умеет: телефоны, Telegram Desktop и macOS.
-    if (tg.isVersionAtLeast && tg.isVersionAtLeast('8.0') && tg.requestFullscreen && !tg.isFullscreen) tg.requestFullscreen();
+    let wantFull = true;
+    try { wantFull = localStorage.getItem('tochnyak_fullscreen') !== '0'; } catch { /* по умолчанию полный экран */ }
+    if (wantFull && tg.isVersionAtLeast && tg.isVersionAtLeast('8.0') && tg.requestFullscreen && !tg.isFullscreen) tg.requestFullscreen();
   } catch { /* не все клиенты это умеют */ }
   syncSafeArea();
   try {
@@ -273,12 +276,15 @@ async function enterApp(profile) {
   $('gate').hidden = true;
   $('app').hidden = false;
   const battle = /^#battle-([a-z0-9]{10})$/.exec(location.hash);
+  const match = /^#match-(\d{1,12})$/.exec(location.hash);
+  if (match) state.openMatchId = Number(match[1]);
   if (battle) openBattle(battle[1]);
   else go({ '#profile': 'profile', '#friends': 'friends', '#rating': 'rating' }[location.hash] || 'matches');
   openLegalFromHash();
   clearHash();
   if (state.pendingRef) acceptInvite(state.pendingRef);
-  loadBattles().then(() => { if (!battle) showIncomingBattle(); });
+  syncFsButton();
+  loadBattles().then(() => { if (!battle && !match) showIncomingBattle(); });
 }
 
 // Вернулся в приложение из другого чата — проверяем новые вызовы и уведомления.
@@ -381,7 +387,11 @@ document.addEventListener('click', (e) => {
   const goEl = t.closest('[data-go]');
   if (goEl) { haptic('light'); go(goEl.dataset.go); return; }
   const chip = t.closest('[data-league]');
-  if (chip) { state.league = chip.dataset.league; haptic('select'); renderMatches(); return; }
+  if (chip) {
+    state.league = chip.dataset.league; haptic('select');
+    if (!$('sheet').hidden) closeSheet();
+    renderMatches(); window.scrollTo({ top: 0, behavior: 'smooth' }); return;
+  }
   const period = t.closest('[data-period]');
   if (period) { state.period = period.dataset.period; setSelected('period', state.period); haptic('select'); loadRating(); return; }
   const fperiod = t.closest('[data-fperiod]');
@@ -389,7 +399,11 @@ document.addEventListener('click', (e) => {
   const mytab = t.closest('[data-mytab]');
   if (mytab) { state.mytab = mytab.dataset.mytab; setSelected('mytab', state.mytab); haptic('select'); renderMy(); return; }
   const pick = t.closest('[data-pick]');
-  if (pick) { state.shopPick = pick.dataset.pick; haptic('select'); renderShop(); return; }
+  if (pick) { pickShopCharacter(pick.dataset.pick); return; }
+  const skinEl = t.closest('[data-skin]');
+  if (skinEl) { pickShopSkin(skinEl.dataset.skin); haptic('select'); renderShop(); return; }
+  const shopChar = t.closest('[data-shop-char]');
+  if (shopChar) { const ch = state.shop.characters.find((x) => x.id === shopChar.dataset.shopChar); if (ch) { pickShopSkin(ch.skins[0].id); haptic('select'); renderShop(); } return; }
   const shopAct = t.closest('[data-shop]');
   if (shopAct) { shopAction(shopAct.dataset.shop, shopAct.dataset.id); return; }
   const unfriend = t.closest('[data-unfriend]');
@@ -477,11 +491,18 @@ function renderMatches() {
   const present = LEAGUE_ORDER.filter((code) => all.some((m) => m.competition === code));
   if (state.league !== 'ALL' && !present.includes(state.league)) state.league = 'ALL';
 
-  const chip = (code, label) => `<button type="button" class="chip" role="tab" data-league="${code}" aria-selected="${state.league === code}">${esc(label)}</button>`;
-  $('league-chips').innerHTML = [chip('ALL', 'Все')].concat(present.map((code) => chip(code, LEAGUES[code] || code))).join('');
+  state.presentLeagues = present;
+  $('filter-label').textContent = state.league === 'ALL' ? 'Все лиги' : LEAGUES[state.league] || state.league;
+  $('filter-btn').classList.toggle('on', state.league !== 'ALL');
+  renderBattleBanner();
 
   const list = state.league === 'ALL' ? all : all.filter((m) => m.competition === state.league);
   renderHero(list);
+  if (state.openMatchId) {
+    const want = all.find((m) => m.id === state.openMatchId);
+    state.openMatchId = null;
+    if (want) openSheet(want, 'outcome');
+  }
 
   if (!list.length) {
     $('match-list').innerHTML = '<div class="glass empty"><b>Матчей пока нет</b>Загляни чуть позже</div>';
@@ -499,6 +520,49 @@ function renderMatches() {
       <div class="glass list-card">${g.items.map(matchRow).join('')}</div>
     </section>`).join('');
 }
+
+// Фильтр по чемпионату: одна кнопка над списком, выбор в окне.
+function openLeagueFilter() {
+  const all = state.matches.filter((m) => !ENDED.includes(m.status));
+  const count = (code) => all.filter((m) => code === 'ALL' || m.competition === code).length;
+  const row = (code, label) => `<button type="button" class="league-opt${state.league === code ? ' on' : ''}" data-league="${code}" aria-pressed="${state.league === code}">
+      <span class="league-opt-name">${esc(label)}</span><span class="league-opt-n num">${count(code)}</span>${state.league === code ? icon('i-check') : ''}</button>`;
+  openPanel('<span class="league-tag">Чемпионат</span>', `<div class="glass list-card league-list">
+      ${[row('ALL', 'Все лиги')].concat((state.presentLeagues || []).map((code) => row(code, LEAGUES[code] || code))).join('')}
+    </div>`, { filter: true });
+}
+$('filter-btn').addEventListener('click', () => { haptic('light'); openLeagueFilter(); });
+
+// На главной: если друг вызвал на бой или пора поставить прогнозы в бою — заметная плашка.
+function renderBattleBanner() {
+  const need = (state.battles || []).filter((b) => b.needsMyPicks);
+  if (!need.length) { $('battle-banner').innerHTML = ''; return; }
+  const b = need[0];
+  const text = b.status === 'pending' ? `${esc(b.opponent.name)} вызывает тебя на бой` : `Бой с ${esc(b.opponent.name)}: поставь прогнозы`;
+  $('battle-banner').innerHTML = `<button type="button" class="glass battle-banner" data-battle="${esc(b.id)}">
+    ${ava(b.opponent.name, b.opponent.photo, 'avatar-sm')}
+    <span class="battle-banner-main"><b>${text}</b><span>${b.total} ${plural(b.total, ['матч', 'матча', 'матчей'])}${need.length > 1 ? ` · ещё ${need.length - 1} ${plural(need.length - 1, ['бой', 'боя', 'боёв'])} ждут` : ''}</span></span>
+    <span class="battle-banner-go">${icon('i-swords')}Открыть</span>
+  </button>`;
+}
+
+// «Новый бой»: выбираем друга из списка.
+async function openBattlePicker() {
+  haptic('light');
+  let rows = state.friendRows;
+  if (!rows) {
+    try { const data = await api('/api/friends?period=week'); rows = state.friendRows = data.rows; } catch { rows = []; }
+  }
+  const friends = (rows || []).filter((r) => !r.isMe);
+  openPanel('<span class="league-tag">Новый бой</span>', friends.length ? `
+    <p class="share-lead">С кем бьёмся? Потом выберешь матчи и исходы.</p>
+    <div class="glass list-card">${friends.map((r) => `<button type="button" class="pick-friend" data-challenge="${esc(r.code)}" data-name="${esc(r.name)}">
+        ${ava(r.name, r.photo, 'avatar-sm')}<b>${esc(r.name)}</b><span class="pick-friend-go">${icon('i-swords')}Бой</span></button>`).join('')}</div>
+    <button type="button" class="btn btn-glass" data-add-friend>${icon('i-user-plus')}Добавить друга</button>` : `
+    <div class="glass empty"><svg class="ic ic-xl" aria-hidden="true"><use href="#i-swords"/></svg><b>Сначала добавь друга</b>Бой идёт между друзьями: найди его по @username или номеру, или позови по ссылке</div>
+    <button type="button" class="btn btn-primary" data-add-friend>${icon('i-user-plus')}Добавить друга</button>`, { picker: true });
+}
+$('battle-cta').addEventListener('click', openBattlePicker);
 
 // Короткие названия лиг для узкой колонки времени.
 const LEAGUE_SHORT = { CL: 'ЛЧ', PL: 'АПЛ', PD: 'Ла Лига', SA: 'Серия А', BL1: 'Бундеслига', FL1: 'Лига 1', DED: 'Эредивизи' };
@@ -531,7 +595,7 @@ function matchTag(m) {
     return '<span class="tag tag-open">Прогноз</span>';
   }
   if (m.status === 'POSTPONED') return '<span class="tag tag-none">—</span>';
-  return p ? `<span class="tag tag-wait num">${predText(p)}</span>` : `<span class="tag tag-none">${icon('i-lock')}</span>`;
+  return p ? `<span class="tag tag-wait num">${predText(p)}</span>` : '<span class="tag tag-none">—</span>';
 }
 
 function matchRow(m) {
@@ -580,7 +644,7 @@ function renderHero(list) {
   $('hero').innerHTML = `
     <div class="glass hero hero-quick" data-hero="${next.id}">
       <div class="hero-meta"><span class="league-tag">${esc(league(next))}</span>
-        <span class="badge">${icon('i-lock')}<span class="num" id="hero-count">${countdownText(Date.parse(next.lockAt) - Date.now())}</span></span></div>
+        <span class="badge">${icon('i-clock')}<span class="num" id="hero-count">${countdownText(Date.parse(next.lockAt) - Date.now())}</span></span></div>
       <div class="versus">
         <span class="team">${crest(next.home, 'crest-lg')}<span>${esc(next.home.short)}</span></span>
         <span class="hero-time"><span class="num">${timeFmt.format(new Date(next.utcDate))}</span><span class="muted small">${esc(dayLabel(next.utcDate).toLowerCase())}</span></span>
@@ -1295,16 +1359,16 @@ async function loadProfile() {
   } catch { /* покажем то, что уже есть */ }
 }
 
-// Точность по лигам: сколько угадано из сыгранных и сколько точных счетов. Проценты не показываем.
-function leagueStatsHtml(leagues) {
-  if (!leagues || !leagues.length) return '';
-  const rows = leagues.map((l) => `<div class="rule-row">
-      <span>${esc(LEAGUES[l.competition] || l.competition)}</span>
-      <b class="num">${l.hits} из ${l.total}</b>
-      <b class="num coin-val">${l.exact} точн.</b>
-    </div>`).join('');
-  return `<h3 class="day-head"><span>Точность по лигам</span><span class="day-count">угадано</span></h3>
-    <div class="glass list-card">${rows}</div>`;
+// Общая статистика: сколько прогнозов угадано из сыгранных.
+function hitsHtml(p) {
+  const total = p.settledPredictions || 0;
+  const hits = p.hits || 0;
+  const share = total ? Math.round((hits / total) * 100) : 0;
+  return `<div class="glass hits-card">
+    <div class="hits-top"><span>Угадано</span><b class="num">${hits}<span> из ${total}</span></b></div>
+    <span class="hits-bar" aria-hidden="true"><i style="width:${share}%"></i></span>
+    <span class="hits-note">${total ? `${share}% сыгранных прогнозов принесли ауру` : 'Статистика появится после первых сыгранных матчей'}</span>
+  </div>`;
 }
 
 function renderProfile() {
@@ -1326,7 +1390,7 @@ function renderProfile() {
       <span><b class="num">${p.streak || 0}</b><span>подряд</span></span>
     </div>
   </div>
-  ${leagueStatsHtml(p.leagues)}`;
+  ${hitsHtml(p)}`;
   if (html === state.profileHtml && $('profile-card').firstChild) return;
   state.profileHtml = html;
   $('profile-card').innerHTML = html;
@@ -1370,7 +1434,7 @@ function openEcon() {
       </div>
       <div class="econ-card econ-coins">
         <div class="econ-top"><span class="econ-ic"><span class="coin" aria-hidden="true"></span></span><b>Монеты</b><span class="num econ-val">${(p.coins || 0).toLocaleString('ru-RU')}</span></div>
-        <p>Валюта для магазина: на монеты покупаешь новых персонажей. На рейтинг не влияют.</p>
+        <p>Валюта для магазина: на монеты покупаешь персонажей и их образы. На рейтинг не влияют.</p>
         <span class="econ-note">Не покупаются за деньги и не выводятся</span>
       </div>
     </div>
@@ -1435,67 +1499,133 @@ $('delete-btn').addEventListener('click', async () => {
 });
 
 // ---------- Магазин персонажей ----------
+// Персонаж покупается вместе с первым образом, остальные образы — после него.
+// Смотреть и крутить можно любой образ; если монет не хватает, он под замком.
 
-const SOON_SLOTS = 3; // карточки «скоро», пока новых персонажей нет
+const skinFrames = (id) => (String(id || '').includes('_') ? 12 : 4);
+const TIER_CLASS = ['', 't1', 't2', 't3', 't4'];
 
 async function loadShop() {
   if (!state.shop) $('shop-grid').innerHTML = '<div class="glass empty"><span class="spinner" aria-hidden="true"></span></div>';
   try {
     state.shop = await api('/api/shop');
-    if (!state.shopPick || !state.shop.items.some((i) => i.id === state.shopPick)) state.shopPick = state.shop.selected;
+    const skin = shopSkin(state.shopSkin);
+    if (!skin) pickShopSkin(state.shop.selected);
     renderShop();
   } catch (err) {
     $('shop-grid').innerHTML = `<div class="glass empty"><b>Магазин не загрузился</b>${esc(err.message)}${retryBtn('shop')}</div>`;
   }
 }
 
-function shopButton(item, coins) {
-  if (item.selected) return `<button type="button" class="btn btn-glass" disabled>${icon('i-check')}Выбран</button>`;
-  if (item.owned) return `<button type="button" class="btn btn-primary" data-shop="select" data-id="${esc(item.id)}">Выбрать</button>`;
-  if (coins < item.price) return `<button type="button" class="btn btn-glass" disabled><span class="coin" aria-hidden="true"></span><span class="num">${item.price}</span> · не хватает ${item.price - coins}</button>`;
-  return `<button type="button" class="btn btn-primary" data-shop="buy" data-id="${esc(item.id)}">Купить за <span class="coin" aria-hidden="true"></span><span class="num">${item.price}</span></button>`;
+function shopSkin(id) {
+  if (!state.shop || !id) return null;
+  for (const c of state.shop.characters) {
+    const s = c.skins.find((x) => x.id === id);
+    if (s) return { c, s };
+  }
+  return null;
+}
+
+function pickShopSkin(id) {
+  const found = shopSkin(id) || shopSkin(state.shop.selected) || { c: state.shop.characters[0], s: state.shop.characters[0].skins[0] };
+  state.shopSkin = found.s.id;
+  state.shopChar = found.c.id;
+}
+
+// Карточка персонажа показывает надетый образ, иначе первый.
+function charCover(c) {
+  return (c.skins.find((s) => s.selected) || c.skins[0]);
+}
+
+function shopButton(c, s, coins) {
+  const coin = (n) => `<span class="coin" aria-hidden="true"></span><span class="num">${n}</span>`;
+  if (s.selected) return `<button type="button" class="btn btn-glass" disabled>${icon('i-check')}Надет</button>`;
+  if (s.owned) return `<button type="button" class="btn btn-primary" data-shop="select" data-id="${esc(s.id)}">Надеть</button>`;
+  if (s.needsCharacter) {
+    return `<button type="button" class="btn btn-glass btn-locked" data-shop-char="${esc(c.id)}">${icon('i-lock')}Сначала персонаж за ${coin(c.price)}</button>`;
+  }
+  const what = s.tier === 1 ? 'персонажа' : 'образ';
+  if (coins < s.price) {
+    return `<button type="button" class="btn btn-glass btn-locked" disabled>${icon('i-lock')}${coin(s.price)}<span class="btn-sub">не хватает ${s.price - coins}</span></button>`;
+  }
+  return `<button type="button" class="btn btn-primary" data-shop="buy" data-id="${esc(s.id)}">Купить ${what} за ${coin(s.price)}</button>`;
 }
 
 function renderShop() {
   const shop = state.shop;
   if (!shop) return;
   $('shop-coins').textContent = shop.coins.toLocaleString('ru-RU');
-  const item = shop.items.find((i) => i.id === state.shopPick) || shop.items[0];
+  const { c, s } = shopSkin(state.shopSkin) || shopSkin(shop.selected);
+  const locked = !s.owned;
+  const skinsRow = c.skins.length > 1 ? `<div class="skin-row" role="group" aria-label="Образы">${c.skins.map((k) => {
+    // Замок — только если сейчас купить нельзя: нет персонажа или не хватает монет.
+    const closed = !k.owned && (k.needsCharacter || shop.coins < k.price);
+    const tag = k.selected ? icon('i-check') : closed ? icon('i-lock') : '';
+    return `<button type="button" class="skin-tab ${TIER_CLASS[k.tier]}${k.id === s.id ? ' on' : ''}${closed ? ' closed' : ''}" data-skin="${esc(k.id)}" aria-pressed="${k.id === s.id}" aria-label="${esc(k.name)}${closed ? ', закрыт' : ''}">
+      <img src="/chars/${esc(k.id)}/front.webp" alt="" loading="lazy" decoding="async">
+      <span class="skin-tier num">${k.tier}</span>${tag ? `<span class="skin-tag">${tag}</span>` : ''}
+    </button>`;
+  }).join('')}</div>` : '';
+  const priceNote = s.owned ? (s.selected ? 'надет' : 'твой')
+    : `<span class="coin" aria-hidden="true"></span><span class="num">${s.price}</span>`;
   $('shop-stage').innerHTML = `<div class="glass shop-stage">
-    <div class="shop-stage-art">
+    <div class="shop-stage-art ${TIER_CLASS[s.tier]}">
       <span class="dude-glow" aria-hidden="true"></span>
-      <div class="spin" data-spin="${esc(item.id)}" role="img" aria-label="${esc(item.name)}: крути пальцем"></div>
+      ${locked ? (s.needsCharacter || shop.coins < s.price
+    ? `<span class="stage-lock">${icon('i-lock')}${s.needsCharacter ? 'Нужен персонаж' : 'Закрыт'}</span>`
+    : '<span class="stage-lock stage-open">Можно купить</span>') : ''}
+      <span class="spin-hint">${icon('i-rotate')}крути</span>
+      <div class="spin" data-spin="${esc(s.id)}" role="img" aria-label="${esc(c.name)}, ${esc(s.name)}: крути пальцем"></div>
     </div>
-    <div class="shop-stage-info"><b>${esc(item.name)}</b><span class="rarity">${esc(item.rarity || '')}</span></div>
-    ${shopButton(item, shop.coins)}
+    <div class="shop-stage-info">
+      <span class="shop-stage-name"><b>${esc(c.name)}</b><span>${esc(s.name)}</span></span>
+      <span class="shop-stage-side"><span class="rarity ${TIER_CLASS[s.tier]}">${esc(s.rarity || '')}</span><span class="shop-price">${priceNote}</span></span>
+    </div>
+    ${skinsRow}
+    ${shopButton(c, s, shop.coins)}
   </div>`;
-  const cards = shop.items.map((i) => `
-    <button type="button" class="glass shop-card${i.id === item.id ? ' picked' : ''}" data-pick="${esc(i.id)}" aria-pressed="${i.id === item.id}">
-      <img src="/chars/${esc(i.id)}/front.webp" alt="" loading="lazy">
-      <span class="shop-card-name">${esc(i.name)}</span>
-      <span class="shop-card-price">${i.selected ? 'выбран' : i.owned ? 'есть' : `<span class="coin" aria-hidden="true"></span><span class="num">${i.price}</span>`}</span>
-    </button>`);
-  for (let k = 0; k < SOON_SLOTS; k += 1) {
-    cards.push(`<div class="glass shop-card soon" aria-label="Скоро новый персонаж">
-      <span class="silhouette" aria-hidden="true"></span>
-      <span class="shop-card-name">Скоро</span>
-      <span class="shop-card-price">${icon('i-lock')}</span>
-    </div>`);
-  }
-  $('shop-grid').innerHTML = cards.join('');
+  $('shop-grid').innerHTML = shop.characters.map((ch) => {
+    const cover = charCover(ch);
+    const wearing = ch.skins.some((k) => k.selected);
+    const ownedCount = ch.skins.filter((k) => k.owned).length;
+    let price;
+    if (wearing) price = 'надет';
+    else if (ch.owned) price = ch.skins.length > 1 ? `образов ${ownedCount} из ${ch.skins.length}` : 'есть';
+    else price = `${shop.coins < ch.price ? icon('i-lock') : ''}<span class="coin" aria-hidden="true"></span><span class="num">${ch.price}</span>`;
+    return `<button type="button" class="glass shop-card${ch.id === c.id ? ' picked' : ''}${!ch.owned && shop.coins < ch.price ? ' closed' : ''}" data-pick="${esc(ch.id)}" aria-pressed="${ch.id === c.id}">
+      <span class="shop-card-art"><img src="/chars/${esc(cover.id)}/front.webp" alt="" loading="lazy" decoding="async"></span>
+      <span class="shop-card-name">${esc(ch.name)}</span>
+      <span class="shop-card-price">${price}</span>
+    </button>`;
+  }).join('');
   mountSpinners();
 }
 
+function pickShopCharacter(id) {
+  const ch = state.shop && state.shop.characters.find((x) => x.id === id);
+  if (!ch) return;
+  pickShopSkin(charCover(ch).id);
+  haptic('select');
+  renderShop();
+  // На телефоне витрина выше списка: возвращаемся к ней.
+  if (window.innerWidth < 960) $('shop-stage').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
 async function shopAction(action, id) {
+  const found = shopSkin(id);
+  if (!found) return;
+  const { c, s } = found;
   const ok = action === 'buy'
-    ? await confirmDialog(`Купить «${state.shop.items.find((i) => i.id === id).name}»? Монеты спишутся, аура и рейтинг не изменятся.`)
+    ? await confirmDialog(s.tier === 1
+      ? `Купить персонажа ${c.name} за ${s.price} монет? Первый образ входит в покупку, остальные откроются для покупки.`
+      : `Купить образ «${s.name}» для ${c.name} за ${s.price} монет?`)
     : true;
   if (!ok) return;
   try {
     state.shop = await api(`/api/shop/${action}`, { method: 'POST', body: { id } });
     haptic('success');
     if (state.profile) { state.profile.coins = state.shop.coins; state.profile.character = state.shop.selected; renderTop(); }
-    toast(action === 'buy' ? 'Персонаж твой' : 'Персонаж выбран');
+    toast(action === 'buy' ? (s.tier === 1 ? `${c.name} теперь твой` : 'Образ твой и уже надет') : 'Образ надет');
     renderShop();
   } catch (err) {
     haptic('error');
@@ -1528,8 +1658,10 @@ async function openNotices() {
   try {
     const data = await api('/api/notifications');
     if (!state.sheet || !state.sheet.notices) return;
+    $('sheet-meta').innerHTML = `<span class="league-tag">Уведомления</span>${data.items.length
+      ? '<button type="button" class="link notice-clear" id="notice-clear">Очистить</button>' : ''}`;
     $('sheet-body').innerHTML = data.items.length
-      ? `<div class="glass list-card">${data.items.map((n) => `
+      ? `<div class="glass list-card notice-list">${data.items.map((n) => `
           <button type="button" class="notice${n.read ? '' : ' unread'}" data-notice="${esc(n.link || '')}">
             <span class="notice-ic">${icon(NOTICE_ICON[n.kind] || 'i-bell')}</span>
             <span class="notice-main"><span>${esc(n.text)}</span><span class="notice-at">${esc(agoText(n.at))}</span></span>
@@ -1547,6 +1679,51 @@ async function openNotices() {
 }
 
 $('bell-btn').addEventListener('click', () => { haptic('light'); openNotices(); });
+
+document.addEventListener('click', async (e) => {
+  if (!e.target.closest('#notice-clear')) return;
+  const ok = await confirmDialog('Удалить все уведомления?');
+  if (!ok) { openNotices(); return; }
+  try {
+    await api('/api/notifications/clear', { method: 'POST' });
+    haptic('success');
+    if (state.profile) state.profile.unread = 0;
+    setBadge(0);
+    openNotices();
+  } catch (err) { toast(err.message); }
+});
+
+// ---------- Полный экран: одна кнопка «развернуть / свернуть» ----------
+
+const FS_KEY = 'tochnyak_fullscreen';
+const tgFullscreen = () => Boolean(tg && tg.requestFullscreen && tg.isVersionAtLeast && tg.isVersionAtLeast('8.0'));
+const docFullscreen = () => Boolean(!tgFullscreen() && document.documentElement.requestFullscreen && document.fullscreenEnabled);
+const isFull = () => (tgFullscreen() ? Boolean(tg.isFullscreen) : Boolean(document.fullscreenElement));
+
+function syncFsButton() {
+  const b = $('fs-btn');
+  if (!tgFullscreen() && !docFullscreen()) { b.hidden = true; return; }
+  b.hidden = false;
+  const full = isFull();
+  b.setAttribute('aria-label', full ? 'Свернуть из полного экрана' : 'Развернуть на весь экран');
+  b.setAttribute('aria-pressed', String(full));
+  b.querySelector('use').setAttribute('href', full ? '#i-shrink' : '#i-expand');
+}
+
+function toggleFullscreen() {
+  haptic('light');
+  const full = isFull();
+  try { localStorage.setItem(FS_KEY, full ? '0' : '1'); } catch { /* не страшно */ }
+  try {
+    if (tgFullscreen()) { if (full) tg.exitFullscreen(); else tg.requestFullscreen(); }
+    else if (full) document.exitFullscreen(); else document.documentElement.requestFullscreen();
+  } catch { /* клиент не дал — ничего страшного */ }
+  setTimeout(syncFsButton, 400);
+}
+
+$('fs-btn').addEventListener('click', toggleFullscreen);
+document.addEventListener('fullscreenchange', syncFsButton);
+if (tg && tg.onEvent) { try { tg.onEvent('fullscreenChanged', syncFsButton); tg.onEvent('fullscreenFailed', syncFsButton); } catch { /* старые клиенты */ } }
 
 document.addEventListener('click', (e) => {
   const n = e.target.closest('[data-notice]');
@@ -1618,6 +1795,7 @@ async function loadBattles() {
   } catch { return; }
   $('tab-dot').hidden = !state.battles.some((b) => b.needsMyPicks);
   if (state.view === 'friends') renderBattles();
+  if (state.view === 'matches') renderBattleBanner();
 }
 
 function battleLabel(b) {
@@ -1639,7 +1817,7 @@ function renderBattles() {
   if (!list.length) {
     $('battles-list').innerHTML = `<div class="glass battle-promo">
       <span class="battle-promo-ic">${icon('i-swords')}</span>
-      <span><b>Бой с другом</b><span class="muted small">Выберите матчи, поставьте разные счета и посмотрите, кто точнее. Нажми «Бой» рядом с другом.</span></span>
+      <span><b>Боёв пока нет</b><span class="muted small">Нажми «Новый бой» выше или значок мечей рядом с другом в таблице.</span></span>
     </div>`;
     return;
   }
@@ -1979,12 +2157,20 @@ async function battleAction(action) {
 }
 
 // ---------- Персонаж, которого можно крутить пальцем ----------
-// Четыре ракурса без фона: спереди, справа, сзади, слева. Между ними персонаж плавно «доворачивается»:
-// сужается к ребру и раскрывается следующим ракурсом. После броска пальцем крутится по инерции.
+// У Точняка четыре ракурса (спереди, справа, сзади, слева): между ними он плавно «доворачивается» —
+// сужается к ребру и раскрывается следующим ракурсом. У остальных персонажей 12 кадров поворота:
+// кадры просто сменяют друг друга. После броска пальцем персонаж крутится по инерции.
 
 const VIEWS4 = ['front', 'right', 'back', 'left'];
+const FRAMES12 = Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, '0'));
 const DEG_PER_PX = 1.1;
 const spin = { angle: 0, els: new Set(), raf: 0, velocity: 0, dragging: false };
+
+function spinStep() {
+  // Остановка на ближайшем ракурсе: у Точняка через 90°, у остальных через 30°.
+  for (const el of spin.els) if (el.isConnected && el.dataset.frames === '4') return 90;
+  return 30;
+}
 
 function mountSpinners() {
   document.querySelectorAll('[data-spin]').forEach((el) => {
@@ -1992,8 +2178,11 @@ function mountSpinners() {
     const id = el.dataset.spin || 'tochnyak';
     if (el.dataset.ready === id) return;
     el.dataset.ready = id;
-    el.innerHTML = '<div class="spin-imgs">'
-      + VIEWS4.map((v) => `<img src="/chars/${encodeURIComponent(id)}/${v}.webp" alt="" draggable="false" decoding="async">`).join('')
+    const n = skinFrames(id);
+    el.dataset.frames = String(n);
+    const names = n === 4 ? VIEWS4 : FRAMES12;
+    el.innerHTML = `<div class="spin-imgs${n === 4 ? '' : ' r23'}">`
+      + names.map((v, k) => `<img src="/chars/${encodeURIComponent(id)}/${v}.webp" alt="" draggable="false" decoding="async"${k ? ' loading="eager"' : ''}>`).join('')
       + '</div><span class="spin-floor" aria-hidden="true"></span>';
     if (el.dataset.bound) return;
     el.dataset.bound = '1';
@@ -2039,6 +2228,7 @@ function setAngle(a) {
 // Инерция с трением, в конце мягко встаём на ближайший ракурс.
 function coast() {
   let prev = performance.now();
+  const stepDeg = spinStep();
   const step = (now) => {
     const dt = Math.min(40, now - prev); prev = now;
     if (Math.abs(spin.velocity) > 0.03) {
@@ -2047,7 +2237,7 @@ function coast() {
       spin.raf = requestAnimationFrame(step);
       return;
     }
-    const target = Math.round(spin.angle / 90) * 90;
+    const target = Math.round(spin.angle / stepDeg) * stepDeg;
     const diff = target - spin.angle;
     if (Math.abs(diff) < 0.3) { spin.angle = target; paintSpin(); return; }
     spin.angle += diff * Math.min(1, dt * 0.014);
@@ -2060,20 +2250,29 @@ function coast() {
 const clamp01 = (x) => Math.min(1, Math.max(0, x));
 
 function paintSpin() {
-  const pos = ((spin.angle / 90) % 4 + 4) % 4;
-  const i = Math.floor(pos);
-  const j = (i + 1) % 4;
-  const p = pos - i;
-  // Ширина: полная на ракурсе, вдвое уже на середине поворота (человек в профиль тоже уже).
-  const sx = 0.55 + 0.45 * Math.abs(Math.cos(Math.PI * p));
-  const oi = clamp01((0.58 - p) / 0.16);
-  const oj = clamp01((p - 0.42) / 0.16);
   for (const el of spin.els) {
     if (!el.isConnected) { spin.els.delete(el); continue; }
+    const n = Number(el.dataset.frames) || 4;
+    const pos = ((spin.angle / (360 / n)) % n + n) % n;
+    const i = Math.floor(pos);
+    const j = (i + 1) % n;
+    const p = pos - i;
+    let oi; let oj; let sx = 1;
+    if (n === 4) {
+      // Ширина: полная на ракурсе, вдвое уже на середине поворота (человек в профиль тоже уже).
+      sx = 0.55 + 0.45 * Math.abs(Math.cos(Math.PI * p));
+      oi = clamp01((0.58 - p) / 0.16);
+      oj = clamp01((p - 0.42) / 0.16);
+    } else {
+      // Соседние кадры: следующий проявляется поверх текущего, без «просвечивания».
+      oi = p < 0.6 ? 1 : 0;
+      oj = clamp01((p - 0.4) / 0.2);
+    }
     el.querySelectorAll('.spin-imgs img').forEach((img, k) => {
       const o = k === i ? oi : k === j ? oj : 0;
       img.style.opacity = String(o);
-      img.style.transform = o ? `scaleX(${sx.toFixed(3)})` : '';
+      img.style.zIndex = k === j ? '2' : '1';
+      img.style.transform = o && n === 4 ? `scaleX(${sx.toFixed(3)})` : '';
     });
   }
 }

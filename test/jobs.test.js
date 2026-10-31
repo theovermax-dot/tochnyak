@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { ensureSchema, resetSchemaFlag } from '../src/db.js';
-import { sendReminders, weeklyWrapUp } from '../src/jobs.js';
+import { sendReminders, weeklyWrapUp, dailyTopMatch, topMatchScore } from '../src/jobs.js';
 import { TestD1 } from './helpers.js';
 
 const MIN = 60000;
@@ -18,10 +18,11 @@ async function addUser(env, id, name, at) {
     VALUES (?1, ?2, 0, ?3, ?3, ?3, 2)`).bind(id, name, at).run();
 }
 
-async function addMatch(env, id, utcDate, status = 'TIMED') {
+async function addMatch(env, id, utcDate, status = 'TIMED', t = {}) {
+  const m = { comp: 'BL1', home: 'FC Schalke 04', hs: 'Schalke', away: 'RB Leipzig', as: 'RB Leipzig', ...t };
   await env.DB.prepare(`INSERT INTO matches (id, competition, competition_name, utc_date, status, home_name, home_short, home_tla,
-    away_name, away_short, away_tla, updated_at) VALUES (?1, 'BL1', 'Bundesliga', ?2, ?3, 'FC Schalke 04', 'Schalke', 'S04',
-    'RB Leipzig', 'RB Leipzig', 'RBL', ?2)`).bind(id, utcDate, status).run();
+    away_name, away_short, away_tla, updated_at) VALUES (?1, ?4, 'League', ?2, ?3, ?5, ?6, 'AAA', ?7, ?8, 'BBB', ?2)`)
+    .bind(id, utcDate, status, m.comp, m.home, m.hs, m.away, m.as).run();
 }
 
 async function addPrediction(env, userId, matchId, at, points = null, settledAt = null) {
@@ -100,4 +101,35 @@ test('итоги недели: +10 монет лидерам, уведомлен
   // Во вторник итоги уже не подводятся (например, сразу после деплоя посреди недели).
   const env2 = await makeEnv();
   assert.equal(await weeklyWrapUp(env2, { now: now + 2 * 86400000, appUrl: 'x', send: bot.send }), null);
+});
+
+test('топ-матч дня: в 10 утра по Москве, самый громкий матч, один раз, без тех, кто уже поставил', async () => {
+  const env = await makeEnv();
+  const now = Date.parse('2026-11-01T07:05:00Z'); // 10:05 МСК
+  const seen = new Date(now - 86400000).toISOString();
+  for (const [id, name] of [[1, 'Макс'], [2, 'Витя'], [3, 'Тихий'], [4, 'Давно']]) await addUser(env, id, name, seen);
+  await env.DB.prepare("UPDATE users SET last_seen_at = '2026-08-01T00:00:00.000Z' WHERE id = 4").run();
+  await env.DB.prepare('UPDATE users SET notify = 0 WHERE id = 3').run();
+  // Сегодня вечером по Москве: Бундеслига и Эль-класико; завтрашний матч ЛЧ не считается.
+  await addMatch(env, 10, '2026-11-01T14:30:00Z');
+  await addMatch(env, 11, '2026-11-01T19:00:00Z', 'TIMED', { comp: 'PD', home: 'Real Madrid CF', hs: 'Real Madrid', away: 'FC Barcelona', as: 'Barça' });
+  await addMatch(env, 12, '2026-11-02T20:00:00Z', 'TIMED', { comp: 'CL', home: 'Liverpool FC', hs: 'Liverpool', away: 'Arsenal FC', as: 'Arsenal' });
+  await addPrediction(env, 2, 11, seen);
+  assert.ok(topMatchScore({ competition: 'PD', home_name: 'Real Madrid CF', away_name: 'FC Barcelona' }) > topMatchScore({ competition: 'CL', home_name: 'FC Kairat', away_name: 'Club Brugge' }));
+
+  const early = fakeBot();
+  assert.equal(await dailyTopMatch(env, { now: now - 3600000, appUrl: 'https://app.test', send: early.send }), null, 'в 9 утра ещё рано');
+
+  const bot = fakeBot();
+  const res = await dailyTopMatch(env, { now, appUrl: 'https://app.test', send: bot.send });
+  assert.equal(res.match, 11);
+  assert.deepEqual(bot.sent.map((m) => m.chat_id), [1], 'Витя уже поставил, Тихий в /mute, Давно не заходил');
+  assert.match(bot.sent[0].text, /Топ-матч дня/);
+  assert.match(bot.sent[0].text, /Real Madrid — Barcelona/);
+  assert.match(bot.sent[0].text, /сегодня в 22:00 МСК/);
+  assert.equal(bot.sent[0].reply_markup.inline_keyboard[0][0].web_app.url, 'https://app.test/#match-11');
+
+  const again = fakeBot();
+  assert.equal(await dailyTopMatch(env, { now: now + 600000, appUrl: 'https://app.test', send: again.send }), null);
+  assert.equal(again.sent.length, 0, 'второй раз за день не шлём');
 });
