@@ -990,7 +990,7 @@ async function makeBattleImage(b, link) {
   ctx.font = `700 46px ${body}`; ctx.fillStyle = 'rgba(245,242,244,0.85)';
   ctx.fillText('Ты', W * 0.27, 900); ctx.fillText(b.opponent.name.slice(0, 16), W * 0.73, 900);
   ctx.font = `700 40px ${body}`; ctx.fillStyle = 'rgba(245,242,244,0.6)';
-  ctx.fillText(`Сыграно ${b.decided} из ${b.total} ${plural(b.total, ['матч', 'матча', 'матчей'])}`, W / 2, 980);
+  ctx.fillText(`Сыграно ${b.decided} из ${b.total} ${plural(b.total, ['матча', 'матчей', 'матчей'])}`, W / 2, 980);
   const ch = await loadImg(`/chars/${encodeURIComponent((state.profile && state.profile.character) || 'tochnyak')}/front.webp`);
   if (ch) { const h = 600; const w = (ch.width / ch.height) * h; ctx.drawImage(ch, (W - w) / 2, 1040, w, h); }
   ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.beginPath(); ctx.ellipse(W / 2, 1645, 200, 24, 0, 0, Math.PI * 2); ctx.fill();
@@ -1718,9 +1718,12 @@ function draftRow(m, p, mode) {
   // На победу: П1 / Х / П2 видны сразу, одно касание выбирает матч и исход, повторное — снимает.
   if (mode === 'outcome') {
     const pick = p ? p.pick : null;
-    return `<div class="prow prow-out${pick ? ' on' : ''}">
+    // Матч уже в бою, но исход не выбран (например, после «Бой на сегодняшние матчи»): подсвечиваем и даём убрать.
+    const need = Boolean(p && !pick);
+    return `<div class="prow prow-out${pick ? ' on' : ''}${need ? ' need' : ''}">
       <span class="prow-teams">
-        <span class="prow-meta num">${timeFmt.format(new Date(m.utcDate))} · ${esc(LEAGUE_SHORT[m.competition] || league(m))}</span>
+        <span class="prow-meta num">${timeFmt.format(new Date(m.utcDate))} · ${esc(LEAGUE_SHORT[m.competition] || league(m))}${need
+          ? ` · <button type="button" class="prow-x" data-draft="${m.id}" aria-label="Убрать матч из боя">убрать</button>` : ''}</span>
         <span class="prow-team">${crest(m.home)}<b>${esc(m.home.short)}</b></span>
         <span class="prow-team">${crest(m.away)}<b>${esc(m.away.short)}</b></span>
       </span>

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import worker, { weekStartIso, inviteCaption } from '../src/index.js';
+import worker, { weekStartIso, inviteCaption, ruPlural } from '../src/index.js';
 import { resetSchemaFlag } from '../src/db.js';
 import { upsertMatches, settleFinished } from '../src/footballData.js';
 import { TestD1, signInitData } from './helpers.js';
@@ -561,4 +561,30 @@ test('приглашение по нику: красивая ссылка, др�
   } finally { globalThis.fetch = realFetch; }
   assert.match(sent[0].caption, /Максим приглашает тебя в Точняк/);
   assert.match(sent[0].reply_markup.inline_keyboard[0][0].web_app.url, /\?f=[a-z0-9]{8}$/);
+});
+
+test('склонение: матч, матча, матчей', () => {
+  const f = (n) => `${n} ${ruPlural(n, ['матч', 'матча', 'матчей'])}`;
+  assert.deepEqual([1, 2, 4, 5, 11, 12, 21, 22, 25, 30].map(f),
+    ['1 матч', '2 матча', '4 матча', '5 матчей', '11 матчей', '12 матчей', '21 матч', '22 матча', '25 матчей', '30 матчей']);
+});
+
+test('бот: /mute и /unmute выключают и включают напоминания', async () => {
+  const env = makeEnv();
+  await call(env, '/api/auth', { user: max, method: 'POST', body: { accept: true } });
+  const realFetch = globalThis.fetch;
+  const sent = [];
+  globalThis.fetch = async (u, init) => { sent.push(JSON.parse(init.body)); return new Response('{"ok":true,"result":{}}'); };
+  const say = (text) => worker.fetch(new Request('https://tochnyak.test/bot/webhook', {
+    method: 'POST', headers: { 'x-telegram-bot-api-secret-token': 'test-secret', 'content-type': 'application/json' },
+    body: JSON.stringify({ message: { message_id: 1, chat: { id: max.id }, from: { id: max.id }, text } })
+  }), env);
+  try {
+    await say('/mute');
+    assert.equal((await env.DB.prepare('SELECT notify FROM users WHERE id = ?1').bind(max.id).first()).notify, 0);
+    assert.match(sent.at(-1).text, /больше не придут/);
+    await say('/unmute');
+    assert.equal((await env.DB.prepare('SELECT notify FROM users WHERE id = ?1').bind(max.id).first()).notify, 1);
+    assert.match(sent.at(-1).text, /снова включены/);
+  } finally { globalThis.fetch = realFetch; }
 });

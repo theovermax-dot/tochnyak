@@ -24,6 +24,16 @@ const error = (status, code, message) => json({ error: code, message }, status);
 
 export { weekStartIso };
 
+// 1 матч, 2 матча, 5 матчей, 21 матч, 22 матча.
+export function ruPlural(n, [one, few, many]) {
+  const a = Math.abs(n) % 100;
+  const b = a % 10;
+  if (a > 10 && a < 20) return many;
+  if (b === 1) return one;
+  if (b >= 2 && b <= 4) return few;
+  return many;
+}
+
 function lockMs(env) {
   return Number(env.LOCK_MINUTES || 5) * 60000;
 }
@@ -393,7 +403,7 @@ async function handleApi(request, env, url, now, ctx) {
     const mode = body.mode === 'score' ? 'score' : 'outcome';
     const res = await createBattle(db, { userId: tgUser.id, friendCode: body.friend, picks: body.picks, mode, now, lockMs: lockMs(env) });
     if (res.error) return error(...res.error);
-    await addNotice(db, res.opponentId, 'battle_invite', `${tgUser.firstName || 'Друг'} бросает тебе вызов на бой · ${body.picks.length} ${body.picks.length === 1 ? 'матч' : body.picks.length < 5 ? 'матча' : 'матчей'}`, `#battle-${res.id}`, now);
+    await addNotice(db, res.opponentId, 'battle_invite', `${tgUser.firstName || 'Друг'} бросает тебе вызов на бой · ${body.picks.length} ${ruPlural(body.picks.length, ['матч', 'матча', 'матчей'])}`, `#battle-${res.id}`, now);
     later(ctx, () => notify(env, res.opponentId,
       `⚔️ <b>${escHtml(tgUser.firstName || 'Друг')} бросает тебе вызов на бой</b>\n\nМатчей в бою: ${body.picks.length}, ${mode === 'outcome' ? 'ставим на победу' : 'ставим точный счёт'}. Делай прогнозы, пока матчи не начались. Победит тот, кто окажется точнее.`,
       'Принять бой', `${url.origin}/#battle-${res.id}`));

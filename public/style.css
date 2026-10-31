@@ -705,6 +705,9 @@ button, a, [role="button"] { touch-action: manipulation; }
 .prow-out .prow-team .crest { width: 24px; height: 24px; }
 .prow-out .ochips button { min-width: 42px; height: 40px; font-size: 14px; }
 .prow-out.on { background: rgba(197, 3, 55, 0.12); }
+.prow-out.need { background: rgba(197, 3, 55, 0.07); box-shadow: inset 3px 0 0 var(--crimson); }
+.prow-out.need .ochips { border-color: rgba(255, 46, 99, 0.55); }
+.prow-x { border: none; background: none; padding: 0; color: var(--faint); font: inherit; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
 #bn-list { padding-bottom: 76px; }
 #bn-count { font-family: 'Manrope', sans-serif; font-size: 13px; }
 
